@@ -3,9 +3,12 @@ services:
   - type: web
     name: qadam-history
     runtime: node
-    plan: free
+    # Starter жоспары тұрақты дискімен келеді: аккаунттар мен нәтижелер сақталады.
+    # Тегін көрсетілім үшін plan: free қойып, төмендегі DATA_DIR пен disk бөлігін өшіріңіз
+    # (онда сервер қайта қосылған сайын аккаунттар мен нәтижелер өшеді).
+    plan: starter
     region: frankfurt
-    buildCommand: npm ci --omit=dev || npm install --omit=dev
+    buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /api/overview
     envVars:
@@ -15,11 +18,9 @@ services:
         value: "1"
       - key: TRUST_PROXY
         value: "1"
-    # Тегін жоспарда тұрақты диск жоқ: аккаунттар мен нәтижелер сервер қайта қосылғанда өшеді.
-    # Деректерді сақтау үшін plan: starter қойып, мына бөлікті қосыңыз:
-    #   - key: DATA_DIR (envVars ішіне)
-    #     value: /var/data
-    # disk:
-    #   name: qadam-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: qadam-data
+      mountPath: /var/data
+      sizeGB: 1
