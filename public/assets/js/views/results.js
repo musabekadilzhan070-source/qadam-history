@@ -50,7 +50,7 @@ export async function attemptView(el, [id], app, alive) {
   el.innerHTML = `
     <div class="quiz">
       <ol class="breadcrumb"><li><a href="/results" data-link>Менің нәтижелерім</a></li><li aria-current="page">${esc(formatDate(a.created_at))}</li></ol>
-      ${resultHero(a, { topicSlug: a.topic_slug, topicTitle: a.topic_title })}
+      ${resultHero(a, { topicSlug: a.topic_slug, topicTitle: a.test_title && a.test_title !== a.topic_title ? `${a.topic_title} · ${a.test_title}` : a.topic_title, testId: a.test_id })}
       ${reviewList(a.items)}
     </div>`;
 }

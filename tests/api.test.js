@@ -58,29 +58,38 @@ test('period and topic pages resolve, unknown slugs 404', async () => {
   assert.equal((await call('GET', '/api/topics/nope')).status, 404);
 });
 
+async function topicTestId(call) {
+  const { body } = await call('GET', '/api/topics/kazak-handygynyn-kuryluy/test');
+  return body.test_id;
+}
+
 test('test questions never include correct answers', async () => {
   const call = client();
-  const { body } = await call('GET', '/api/topics/kazak-handygynyn-kuryluy/test');
+  const id = await topicTestId(call);
+  assert.ok(id);
+  const { body } = await call('GET', `/api/tests/${id}`);
   assert.equal(body.questions.length, 5);
+  assert.ok(body.questions.every((q) => q.multiple === false));
   assert.doesNotMatch(JSON.stringify(body), /is_correct|correct_option/);
 });
 
 test('guest grading works but is not saved; signed-in attempts are saved and private', async () => {
   const guest = client();
-  const { body: t } = await guest('GET', '/api/topics/kazak-handygynyn-kuryluy/test');
+  const id = await topicTestId(guest);
+  const { body: t } = await guest('GET', `/api/tests/${id}`);
   const answers = Object.fromEntries(t.questions.map((q) => [q.id, q.options[0].id]));
-  const graded = await guest('POST', '/api/topics/kazak-handygynyn-kuryluy/test', { answers, duration_sec: 42 });
+  const graded = await guest('POST', `/api/tests/${id}`, { answers, duration_sec: 42 });
   assert.equal(graded.status, 200);
   assert.equal(graded.body.saved, false);
   assert.equal(graded.body.total, 5);
   assert.equal(graded.body.items.length, 5);
 
   // Find the right answers from the review, then score 100%.
-  const right = Object.fromEntries(graded.body.items.map((i) => [i.id, i.correct_option_id]));
+  const right = Object.fromEntries(graded.body.items.map((i) => [i.id, i.correct_option_ids]));
   const student = client();
   const reg = await student('POST', '/api/auth/register', { username: 'oqushy1', display_name: 'Оқушы Бір', password: 'secret1' });
   assert.equal(reg.status, 201);
-  const full = await student('POST', '/api/topics/kazak-handygynyn-kuryluy/test', { answers: right });
+  const full = await student('POST', `/api/tests/${id}`, { answers: right });
   assert.equal(full.body.saved, true);
   assert.equal(full.body.percent, 100);
 

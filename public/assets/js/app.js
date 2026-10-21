@@ -2,10 +2,12 @@ import { api } from './api.js';
 import { esc, initials } from './util.js';
 import { icon, ornamentMark } from './art.js';
 import { loading, errorBox } from './components.js';
+import { site } from './site.js';
 import { homeView } from './views/home.js';
 import { periodsView, periodView } from './views/periods.js';
 import { topicView } from './views/topic.js';
-import { quizView } from './views/quiz.js';
+import { quizView, legacyQuizView } from './views/quiz.js';
+import { materialView } from './views/material.js';
 import { testsView } from './views/tests.js';
 import { materialsView } from './views/materials.js';
 import { resultsView, attemptView } from './views/results.js';
@@ -25,10 +27,12 @@ const ROUTES = [
   { re: /^\/$/, nav: 'home', view: homeView, title: '' },
   { re: /^\/periods\/?$/, nav: 'periods', view: periodsView, title: 'Тарихи кезеңдер' },
   { re: /^\/periods\/([\w-]+)\/?$/, nav: 'periods', view: periodView },
-  { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: quizView },
+  { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
+  { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
   { re: /^\/topics\/([\w-]+)\/?$/, nav: 'periods', view: topicView },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/materials\/?$/, nav: 'materials', view: materialsView, title: 'Материалдар' },
+  { re: /^\/materials\/(\d+)\/?$/, nav: 'materials', view: materialView },
   { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім', auth: true },
   { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі', auth: true },
   { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль', auth: true },
@@ -59,11 +63,14 @@ export const app = {
 };
 
 function renderNav(active) {
+  // Labels and icons can be changed by the organizer; the defaults are the original ones.
+  const label = (n) => site.t(`nav_${n.key}`);
+  const short = (n) => (site.texts[`nav_${n.key}`] ? label(n) : n.short);
   document.getElementById('rail-nav').innerHTML = NAV.map(
-    (n) => `<a class="rail-link" href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span></a>`,
+    (n) => `<a class="rail-link" href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''}>${site.navIcon(n.key, n.icon)}<span>${label(n)}</span></a>`,
   ).join('');
   document.getElementById('tabbar').innerHTML = NAV.map(
-    (n) => `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${n.label}">${icon(n.icon)}<span>${n.short}</span></a>`,
+    (n) => `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${label(n)}">${site.navIcon(n.key, n.icon)}<span>${short(n)}</span></a>`,
   ).join('');
 }
 
@@ -121,7 +128,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
   if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const url = new URL(a.href, location.href);
-  if (url.origin !== location.origin || a.target || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/api/')) return;
+  if (url.origin !== location.origin || a.target || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/api/') || url.pathname.startsWith('/organizer')) return;
   e.preventDefault();
   if (app.guard && !app.guard()) return;
   if (url.pathname + url.search === location.pathname + location.search) {
@@ -202,11 +209,8 @@ document.querySelector('.rail-mark').innerHTML = ornamentMark();
 document.querySelector('.brand-mark').innerHTML = ornamentMark();
 document.querySelector('.search').insertAdjacentHTML('afterbegin', icon('search'));
 
-try {
-  const { user } = await api.get('/api/me');
-  app.user = user;
-} catch {
-  app.user = null;
-}
+const [me] = await Promise.all([api.get('/api/me').catch(() => ({ user: null })), site.load()]);
+app.user = me.user;
+document.getElementById('foot-text').innerHTML = site.t('footer');
 renderUserSlot();
 render();

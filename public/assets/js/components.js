@@ -1,5 +1,6 @@
 import { esc, pad2 } from './util.js';
-import { icon, periodEmblem, ornamentBand, ROMAN } from './art.js';
+import { icon, ornamentBand, ROMAN } from './art.js';
+import { site } from './site.js';
 
 /** Period card in the original QADAM style: dark field, red line art, big number, red button. */
 export function periodCard(p) {
@@ -11,7 +12,7 @@ export function periodCard(p) {
   return `
   <article class="period-card">
     <span class="roman" aria-hidden="true">${ROMAN[p.number] || ''}</span>
-    ${periodEmblem(p.number)}
+    ${site.emblem(p.number)}
     <span class="num" aria-hidden="true">${pad2(p.number)}</span>
     <p class="range">${esc(p.range_label)}</p>
     <h3><a href="${href}" data-link>${esc(p.title)}</a></h3>
@@ -23,14 +24,14 @@ export function periodCard(p) {
       <li><b>${p.question_count}</b>сұрақ</li>
       ${done}
     </ul>
-    <a class="btn" href="${href}" data-link tabindex="-1" aria-hidden="true">Тақырыптарды көру ${icon('arrow', 'icon icon-arrow')}</a>
+    <a class="btn" href="${href}" data-link tabindex="-1" aria-hidden="true">${site.t('period_button')} ${icon('arrow', 'icon icon-arrow')}</a>
   </article>`;
 }
 
 export function pageHead({ eyebrow, title, text = '', number = null, extra = '' }) {
   return `
   <header class="page-head">
-    ${number ? periodEmblem(number) + `<span class="num" aria-hidden="true">${pad2(number)}</span>` : ''}
+    ${number ? site.emblem(number) + `<span class="num" aria-hidden="true">${pad2(number)}</span>` : ''}
     ${eyebrow ? `<p class="eyebrow">${esc(eyebrow)}</p>` : ''}
     <h1>${esc(title)}</h1>
     ${text ? `<p>${esc(text)}</p>` : ''}

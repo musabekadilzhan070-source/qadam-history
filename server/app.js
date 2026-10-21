@@ -12,8 +12,10 @@ import {
   makeLimiter,
   purgeExpiredSessions,
 } from './auth.js';
-import { listPeriods, getPeriod, getTopic, listTests, listMaterials, totals } from './content.js';
-import { testForStudent, gradeTest, userResults, attemptDetail } from './quiz.js';
+import { listPeriods, getPeriod, getTopic, listTests, listMaterials, getMaterial, siteInfo, totals } from './content.js';
+import { findTest, firstTestOfTopic, testForStudent, gradeTest, userResults, attemptDetail } from './quiz.js';
+import { ensureFirstPublication } from './publish.js';
+import { orgRouter } from './org.js';
 import { seedIfEmpty } from './seed.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
@@ -25,6 +27,7 @@ export function whenReady() {
   ready ||= (async () => {
     await migrate();
     await seedIfEmpty();
+    await ensureFirstPublication();
     purgeExpiredSessions().catch(() => {});
   })().catch((err) => {
     ready = null;
@@ -53,6 +56,8 @@ app.use('/api', wrap(async (_req, _res, next) => {
   await whenReady();
   next();
 }));
+// A whole test with its questions can be larger than a student request; file uploads are raw bodies (see org.js).
+app.use('/api/org', express.json({ limit: '2mb' }));
 app.use('/api', express.json({ limit: '200kb' }));
 app.use('/api', wrap(sessionMiddleware));
 
@@ -94,30 +99,69 @@ app.get('/api/tests', wrap(async (req, res) => {
 }));
 
 app.get('/api/materials', wrap(async (_req, res) => {
-  res.json({ periods: await listPeriods(null), materials: await listMaterials() });
+  res.json({ periods: await listPeriods(null), ...(await listMaterials()) });
+}));
+
+app.get('/api/materials/:id', wrap(async (req, res) => {
+  const material = await getMaterial(Number(req.params.id));
+  if (!material) return res.status(404).json({ error: 'Материал табылмады.' });
+  res.json(material);
+}));
+
+// Texts, icons and banner image the organizer set for the student pages.
+app.get('/api/site', wrap(async (_req, res) => {
+  res.json(await siteInfo());
+}));
+
+// Uploaded images, icons and PDFs, stored in the database.
+app.get('/api/files/:id', wrap(async (req, res) => {
+  const file = await get('SELECT mime, data, version, name FROM files WHERE id = ?', Number(req.params.id));
+  if (!file) return res.status(404).json({ error: 'Файл табылмады.' });
+  const data = Buffer.from(file.data);
+  res.setHeader('Content-Type', file.mime);
+  // SVG could carry script: sandbox it. Chrome's PDF viewer refuses to run under a sandbox CSP.
+  if (file.mime === 'application/pdf') res.removeHeader('Content-Security-Policy');
+  else res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  const ext = { 'application/pdf': '.pdf' }[file.mime] || '';
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent((file.name || 'file').replace(/\.pdf$/i, '') + ext)}`);
+  // Links carry ?v=<version>, so a replaced file gets a new URL and old copies can be cached for good.
+  // Otherwise the browser revalidates (ETag), so a replaced image shows up everywhere at once.
+  res.setHeader('Cache-Control', String(req.query.v) === String(file.version) ? 'public, max-age=31536000, immutable' : 'no-cache');
+  res.send(data);
 }));
 
 // ─── Tests ─────────────────────────────────────────────────────────
-const findTopic = (slug) => get('SELECT id, slug, title FROM topics WHERE slug = ?', slug);
+const testId = (req) => {
+  const id = Number(req.params.id);
+  return Number.isInteger(id) ? id : null;
+};
 
-app.get('/api/topics/:slug/test', wrap(async (req, res) => {
-  const topic = await findTopic(req.params.slug);
-  if (!topic) return res.status(404).json({ error: 'Тақырып табылмады.' });
-  const questions = await testForStudent(topic.id);
-  if (!questions.length) return res.status(404).json({ error: 'Бұл тақырыпта әзірге тест жоқ.' });
-  res.json({ topic, questions });
+app.get('/api/tests/:id', wrap(async (req, res) => {
+  const found = testId(req) && (await findTest(testId(req)));
+  if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
+  res.json({ id: found.test.id, title: found.test.title, topic: found.topic, questions: testForStudent(found.test) });
 }));
 
-app.post('/api/topics/:slug/test', wrap(async (req, res) => {
-  const topic = await findTopic(req.params.slug);
-  if (!topic) return res.status(404).json({ error: 'Тақырып табылмады.' });
+app.post('/api/tests/:id', wrap(async (req, res) => {
+  const found = testId(req) && (await findTest(testId(req)));
+  if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
   const answers = req.body?.answers;
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return res.status(400).json({ error: 'Жауаптар жіберілмеді.' });
   }
-  const result = await gradeTest(topic.id, answers, { userId: userId(req), durationSec: req.body?.duration_sec });
-  res.json({ topic, saved: Boolean(result.attempt_id), ...result });
+  const result = await gradeTest(found.test, answers, { userId: userId(req), durationSec: req.body?.duration_sec });
+  res.json({ test: { id: found.test.id, title: found.test.title }, topic: found.topic, saved: Boolean(result.attempt_id), ...result });
 }));
+
+// Older links pointed at a topic's single test: answer with that test's id.
+app.get('/api/topics/:slug/test', wrap(async (req, res) => {
+  const id = await firstTestOfTopic(req.params.slug);
+  if (!id) return res.status(404).json({ error: 'Бұл тақырыпта әзірге тест жоқ.' });
+  res.json({ test_id: id });
+}));
+
+// ─── Organizer cabinet ─────────────────────────────────────────────
+app.use('/api/org', orgRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
 app.get('/api/results', requireUser, wrap(async (req, res) => {
@@ -221,6 +265,9 @@ app.use(
     },
   }),
 );
+app.get(/^\/organizer(\/.*)?$/, wrap(async (_req, res) => {
+  res.sendFile(path.join(config.publicDir, 'organizer.html'));
+}));
 app.get(/^\/(?!assets\/).*/, wrap(async (_req, res) => {
   res.sendFile(path.join(config.publicDir, 'index.html'));
 }));
