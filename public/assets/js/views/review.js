@@ -1,5 +1,6 @@
 import { esc, formatDuration } from '../util.js';
 import { icon, ornamentBand } from '../art.js';
+import { fileUrl } from '../site.js';
 
 const LETTERS = ['А', 'Ә', 'Б', 'В', 'Г', 'Д'];
 export const letter = (i) => LETTERS[i] || String(i + 1);
@@ -7,7 +8,7 @@ export const letter = (i) => LETTERS[i] || String(i + 1);
 const verdict = (p) =>
   p >= 90 ? 'Керемет нәтиже!' : p >= 70 ? 'Жақсы нәтиже' : p >= 50 ? 'Жаман емес' : 'Тақырыпты қайталау керек';
 
-export function resultHero(r, { topicSlug, topicTitle, retry = true }) {
+export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = true }) {
   const wrong = r.total - r.correct;
   return `
   <section class="result-hero" aria-labelledby="result-title">
@@ -24,8 +25,8 @@ export function resultHero(r, { topicSlug, topicTitle, retry = true }) {
         ${r.duration_sec ? `<li>${formatDuration(r.duration_sec)} уақыт</li>` : ''}
       </ul>
       <div class="banner-actions">
-        ${retry ? `<a class="btn" href="/topics/${encodeURIComponent(topicSlug)}/test" data-link>Қайта тапсыру</a>` : ''}
-        <a class="btn btn-ghost-light" href="/topics/${encodeURIComponent(topicSlug)}" data-link>Тақырыпқа оралу</a>
+        ${retry && testId ? `<a class="btn" href="/tests/${testId}" data-link>Қайта тапсыру</a>` : ''}
+        ${topicSlug ? `<a class="btn btn-ghost-light" href="/topics/${encodeURIComponent(topicSlug)}" data-link>Тақырыпқа оралу</a>` : ''}
       </div>
     </div>
     ${ornamentBand('band')}
@@ -42,18 +43,21 @@ export function reviewList(items) {
         return `
       <li class="panel review-item ${ok ? 'is-ok' : 'is-bad'}">
         <h3>${icon(ok ? 'check' : 'cross')}<span>${i + 1}. ${esc(q.text)}</span></h3>
+        ${q.image_id ? `<img class="q-image" src="${fileUrl(q.image_id)}" alt="" loading="lazy" />` : ''}
+        ${q.multiple ? '<p class="q-hint">Бірнеше дұрыс жауабы бар сұрақ</p>' : ''}
         <ul class="review-options">
           ${q.options
             .map((o, oi) => {
-              const isRight = o.id === q.correct_option_id;
-              const isChosen = o.id === q.chosen_option_id;
+              const isRight = q.correct_option_ids.includes(o.id);
+              const isChosen = q.chosen_option_ids.includes(o.id);
               const cls = isRight ? 'correct' : isChosen ? 'wrong' : '';
               const tag = isRight ? (isChosen ? 'Сіздің жауабыңыз · дұрыс' : 'Дұрыс жауап') : isChosen ? 'Сіздің жауабыңыз' : '';
-              return `<li class="${cls}"><span>${letter(oi)}. ${esc(o.text)}</span>${tag ? `<small>${tag}</small>` : ''}</li>`;
+              const img = o.image_id ? `<img class="option-image" src="${fileUrl(o.image_id)}" alt="" loading="lazy" />` : '';
+              return `<li class="${cls}"><span>${letter(oi)}. ${img}${esc(o.text)}</span>${tag ? `<small>${tag}</small>` : ''}</li>`;
             })
             .join('')}
         </ul>
-        ${q.chosen_option_id === null ? '<p class="explain"><b>Жауап берілмеді.</b></p>' : ''}
+        ${!q.chosen_option_ids.length ? '<p class="explain"><b>Жауап берілмеді.</b></p>' : ''}
         ${q.explanation ? `<p class="explain"><b>Түсініктеме:</b> ${esc(q.explanation)}</p>` : ''}
       </li>`;
       })

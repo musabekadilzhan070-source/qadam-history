@@ -2,11 +2,20 @@ import { api } from '../api.js';
 import { esc, formatDuration } from '../util.js';
 import { icon } from '../art.js';
 import { letter, resultHero, reviewList } from './review.js';
+import { fileUrl } from '../site.js';
 
-export async function quizView(el, [slug], app, alive) {
-  const { topic, questions } = await api.get(`/api/topics/${encodeURIComponent(slug)}/test`);
+/** Old /topics/:slug/test links open the topic's first test. */
+export async function legacyQuizView(_el, [slug], app, alive) {
+  const { test_id: id } = await api.get(`/api/topics/${encodeURIComponent(slug)}/test`);
+  if (alive()) app.navigate(`/tests/${id}`, { replace: true });
+}
+
+export async function quizView(el, [id], app, alive) {
+  const { topic, questions, title } = await api.get(`/api/tests/${encodeURIComponent(id)}`);
   if (!alive()) return;
-  app.setTitle(`Тест: ${topic.title}`);
+  const heading = title && title !== topic.title ? title : topic.title;
+  app.setTitle(`Тест: ${heading}`);
+  const selfHref = `/tests/${encodeURIComponent(id)}`;
 
   const answers = {};
   const startedAt = Date.now();
@@ -15,7 +24,9 @@ export async function quizView(el, [slug], app, alive) {
   let submitting = false;
   let timer = null;
 
-  const answeredCount = () => questions.filter((q) => answers[q.id]).length;
+  // A single-answer question holds one option id, a multiple-answer one an array of ids.
+  const isAnswered = (q) => (Array.isArray(answers[q.id]) ? answers[q.id].length > 0 : Boolean(answers[q.id]));
+  const answeredCount = () => questions.filter(isAnswered).length;
   const elapsed = () => Math.round((Date.now() - startedAt) / 1000);
 
   const leaveGuard = () => finished || !answeredCount() || confirm('Тест аяқталмады. Жауаптарыңыз сақталмайды. Шығасыз ба?');
@@ -37,7 +48,7 @@ export async function quizView(el, [slug], app, alive) {
         <li aria-current="page">Тест</li>
       </ol>
       <div class="quiz-head">
-        <h1>${esc(topic.title)}</h1>
+        <h1>${esc(heading)}</h1>
         <span class="quiz-timer" aria-label="Өткен уақыт">${icon('clock')}<span id="timer">${formatDuration(elapsed())}</span></span>
       </div>
       <div class="quiz-progress">
@@ -47,13 +58,16 @@ export async function quizView(el, [slug], app, alive) {
       <form class="panel question-card" id="q-form">
         <p class="q-num">Сұрақ ${index + 1} / ${questions.length}</p>
         <h2 id="q-text">${esc(q.text)}</h2>
+        ${q.image_id ? `<img class="q-image" src="${fileUrl(q.image_id)}" alt="" />` : ''}
+        ${q.multiple ? '<p class="q-hint">Бірнеше дұрыс жауап бар: барлығын белгілеңіз.</p>' : ''}
         <fieldset class="options" aria-labelledby="q-text">
           ${q.options
-            .map(
-              (o, i) => `<label class="option">
-                <input type="radio" name="opt" value="${o.id}" ${answers[q.id] === o.id ? 'checked' : ''} />
-                <span class="letter">${letter(i)}</span><span>${esc(o.text)}</span></label>`,
-            )
+            .map((o, i) => {
+              const on = q.multiple ? (answers[q.id] || []).includes(o.id) : answers[q.id] === o.id;
+              return `<label class="option${q.multiple ? ' option-multi' : ''}">
+                <input type="${q.multiple ? 'checkbox' : 'radio'}" name="opt" value="${o.id}" ${on ? 'checked' : ''} />
+                <span class="letter">${letter(i)}</span>${o.image_id ? `<img class="option-image" src="${fileUrl(o.image_id)}" alt="" />` : ''}<span>${esc(o.text)}</span></label>`;
+            })
             .join('')}
         </fieldset>
         <div class="quiz-nav">
@@ -69,7 +83,7 @@ export async function quizView(el, [slug], app, alive) {
         ${questions
           .map(
             (qq, i) =>
-              `<button type="button" class="dot ${answers[qq.id] ? 'answered' : ''}" data-i="${i}" ${i === index ? 'aria-current="step"' : ''} aria-label="${i + 1}-сұрақ">${i + 1}</button>`,
+              `<button type="button" class="dot ${isAnswered(qq) ? 'answered' : ''}" data-i="${i}" ${i === index ? 'aria-current="step"' : ''} aria-label="${i + 1}-сұрақ">${i + 1}</button>`,
           )
           .join('')}
       </nav>
@@ -79,11 +93,12 @@ export async function quizView(el, [slug], app, alive) {
     const form = el.querySelector('#q-form');
     form.addEventListener('change', (e) => {
       if (e.target.name !== 'opt') return;
-      answers[q.id] = Number(e.target.value);
+      if (q.multiple) answers[q.id] = [...form.querySelectorAll('input[name="opt"]:checked')].map((i) => Number(i.value));
+      else answers[q.id] = Number(e.target.value);
       const done = answeredCount();
       el.querySelector('.quiz-progress span').textContent = `${done} / ${questions.length} жауап`;
       el.querySelector('.quiz-progress i').style.width = `${Math.round((done / questions.length) * 100)}%`;
-      el.querySelector(`.dot[data-i="${index}"]`).classList.add('answered');
+      el.querySelector(`.dot[data-i="${index}"]`).classList.toggle('answered', isAnswered(q));
     });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -111,17 +126,17 @@ export async function quizView(el, [slug], app, alive) {
       btn.textContent = 'Тексерілуде…';
     }
     try {
-      const r = await api.post(`/api/topics/${encodeURIComponent(topic.slug)}/test`, { answers, duration_sec: elapsed() });
+      const r = await api.post(`/api/tests/${encodeURIComponent(id)}`, { answers, duration_sec: elapsed() });
       finished = true;
       clearInterval(timer);
       if (!alive()) return;
       el.innerHTML = `
         <div class="quiz">
-          ${resultHero({ ...r, duration_sec: elapsed() }, { topicSlug: topic.slug, topicTitle: topic.title })}
+          ${resultHero({ ...r, duration_sec: elapsed() }, { topicSlug: topic.slug, topicTitle: heading, testId: id })}
           ${
             r.saved
               ? `<div class="notice"><span>Нәтиже сақталды.</span><a class="link-more" href="/results" data-link>Менің нәтижелерім ${icon('arrow')}</a></div>`
-              : `<div class="notice"><span>Нәтиже сақталмады: оны сақтау үшін аккаунтқа кіріңіз.</span><a class="btn btn-dark btn-sm" href="/login?next=${encodeURIComponent(`/topics/${topic.slug}/test`)}" data-link>Кіру</a></div>`
+              : `<div class="notice"><span>Нәтиже сақталмады: оны сақтау үшін аккаунтқа кіріңіз.</span><a class="btn btn-dark btn-sm" href="/login?next=${encodeURIComponent(selfHref)}" data-link>Кіру</a></div>`
           }
           ${reviewList(r.items)}
         </div>`;

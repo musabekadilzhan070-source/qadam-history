@@ -8,7 +8,7 @@ import { PERIODS } from './seed/content.js';
 export async function seedIfEmpty() {
   if (await get('SELECT 1 AS ok FROM periods LIMIT 1')) return false;
   // Explicit ids let the whole seed go in one atomic batch.
-  const ids = { period: 0, topic: 0, question: 0, option: 0 };
+  const ids = { period: 0, topic: 0, test: 0, question: 0, option: 0 };
   const statements = [];
   PERIODS.forEach((period, pi) => {
     const periodId = ++ids.period;
@@ -36,12 +36,16 @@ export async function seedIfEmpty() {
         topic.body.trim(),
         JSON.stringify(topic.keyPoints),
       ]);
+      if (!topic.questions.length) return;
+      const testId = ++ids.test;
+      statements.push(['INSERT INTO tests (id, topic_id, position, title, published) VALUES (?, ?, 1, ?, 1)', testId, topicId, topic.title]);
       topic.questions.forEach((q, qi) => {
         const questionId = ++ids.question;
         statements.push([
-          'INSERT INTO questions (id, topic_id, position, text, explanation) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO questions (id, topic_id, test_id, position, text, explanation) VALUES (?, ?, ?, ?, ?, ?)',
           questionId,
           topicId,
+          testId,
           qi + 1,
           q.text,
           q.explanation,

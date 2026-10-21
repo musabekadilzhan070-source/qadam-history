@@ -82,9 +82,127 @@ CREATE INDEX IF NOT EXISTS idx_options_question ON options(question_id, position
 CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_id, created_at);
 `;
 
+// Tables and columns added after the first release. Every step is additive and idempotent,
+// so an existing database (with its users, attempts and content) upgrades in place.
+const SCHEMA_V2 = `
+CREATE TABLE IF NOT EXISTS tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_id INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  published INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS materials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_id INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  image_id INTEGER,
+  pdf_id INTEGER,
+  published INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS persons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_id INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT '',
+  reign TEXT NOT NULL DEFAULT '',
+  biography TEXT NOT NULL DEFAULT '',
+  facts TEXT NOT NULL DEFAULT '[]',
+  image_id INTEGER,
+  published INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data BLOB NOT NULL,
+  topic_id INTEGER,
+  material_id INTEGER,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS publications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  note TEXT NOT NULL DEFAULT '',
+  hash TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS org_sessions (
+  token_hash TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_failures (
+  key TEXT PRIMARY KEY,
+  count INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tests_topic ON tests(topic_id, position);
+CREATE INDEX IF NOT EXISTS idx_materials_topic ON materials(topic_id, position);
+CREATE INDEX IF NOT EXISTS idx_persons_topic ON persons(topic_id, position);
+`;
+
+const COLUMNS = [
+  ['topics', 'published', 'INTEGER NOT NULL DEFAULT 1'],
+  ['topics', 'image_id', 'INTEGER'],
+  ['topics', 'icon', "TEXT NOT NULL DEFAULT ''"],
+  // Topics are never removed from the table: attempts reference them with ON DELETE CASCADE.
+  ['topics', 'deleted', 'INTEGER NOT NULL DEFAULT 0'],
+  ['questions', 'test_id', 'INTEGER'],
+  ['questions', 'image_id', 'INTEGER'],
+  ['options', 'image_id', 'INTEGER'],
+  ['attempts', 'test_id', 'INTEGER'],
+  ['attempt_answers', 'option_ids', 'TEXT'],
+];
+
+async function addMissingColumns() {
+  for (const [table, column, type] of COLUMNS) {
+    const cols = await all(`PRAGMA table_info(${table})`);
+    if (!cols.some((c) => c.name === column)) await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 export async function migrate() {
   if (config.dbUrl.startsWith('file:')) await db.execute('PRAGMA journal_mode = WAL');
   await db.executeMultiple(SCHEMA);
+  await db.executeMultiple(SCHEMA_V2);
+  await addMissingColumns();
+  // First release kept one test per topic as topic_id on questions: give each such topic a test row.
+  await db.batch(
+    [
+      `INSERT INTO tests (topic_id, position, title, published)
+       SELECT t.id, 1, t.title, 1 FROM topics t
+       WHERE EXISTS (SELECT 1 FROM questions q WHERE q.topic_id = t.id AND q.test_id IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM tests x WHERE x.topic_id = t.id)`,
+      `UPDATE questions SET test_id = (SELECT x.id FROM tests x WHERE x.topic_id = questions.topic_id ORDER BY x.id LIMIT 1)
+       WHERE test_id IS NULL`,
+      `UPDATE attempts SET test_id = (SELECT x.id FROM tests x WHERE x.topic_id = attempts.topic_id ORDER BY x.id LIMIT 1)
+       WHERE test_id IS NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_questions_test ON questions(test_id, position)`,
+    ],
+    'write',
+  );
 }
 
 // Rows as plain objects with numbers (libSQL returns integers as numbers, ids as bigint only in lastInsertRowid).

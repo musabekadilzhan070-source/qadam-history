@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { esc, pad2, scoreBadge, formatDate } from '../util.js';
 import { icon, bannerArt, ornamentBand, ornamentMark } from '../art.js';
 import { periodCard } from '../components.js';
+import { site, fileUrl } from '../site.js';
 
 function progressPanel(user, periods, results) {
   if (!user) {
@@ -78,12 +79,12 @@ export async function homeView(el, _params, app, alive) {
   <div class="home">
     <div class="home-main">
       <section class="banner" aria-labelledby="banner-title">
-        ${bannerArt()}
-        <p class="banner-kicker">${ornamentMark()}QADAM · Қазақстан тарихы</p>
-        <h1 id="banner-title"><span>Өткенді таны.</span><span>Тарихты түсін.</span><span class="accent">Болашаққа қадам бас.</span></h1>
-        <p>Қазақстан тарихын жүйелі меңгеріп, біліміңді тақырыптық тесттер арқылы шыңда.</p>
+        ${site.texts.banner_image_id ? `<img class="banner-photo" src="${fileUrl(site.texts.banner_image_id)}" alt="" />` : bannerArt()}
+        <p class="banner-kicker">${ornamentMark()}${site.t('banner_kicker')}</p>
+        <h1 id="banner-title"><span>${site.t('banner_line1')}</span><span>${site.t('banner_line2')}</span><span class="accent">${site.t('banner_line3')}</span></h1>
+        <p>${site.t('banner_text')}</p>
         <div class="banner-actions">
-          <a class="btn" href="/periods" data-link>Оқуды бастау ${icon('arrow', 'icon icon-arrow')}</a>
+          <a class="btn" href="/periods" data-link>${site.t('banner_button')} ${icon('arrow', 'icon icon-arrow')}</a>
         </div>
         ${ornamentBand('banner-band')}
       </section>
@@ -91,10 +92,10 @@ export async function homeView(el, _params, app, alive) {
       <section class="section" aria-labelledby="periods-title">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Төрт кезең</p>
-            <h2 class="section-title" id="periods-title">Тарихи кезеңдер</h2>
+            <p class="eyebrow">${site.t('periods_eyebrow')}</p>
+            <h2 class="section-title" id="periods-title">${site.t('periods_title')}</h2>
           </div>
-          <a class="link-more" href="/periods" data-link>Барлық кезеңдер ${icon('arrow')}</a>
+          <a class="link-more" href="/periods" data-link>${site.t('periods_more')} ${icon('arrow')}</a>
         </div>
         <div class="period-grid">${periods.map(periodCard).join('')}</div>
       </section>
@@ -102,14 +103,12 @@ export async function homeView(el, _params, app, alive) {
       <section class="section" aria-labelledby="how-title">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Оқу жолы</p>
-            <h2 class="section-title" id="how-title">Қалай оқимыз</h2>
+            <p class="eyebrow">${site.t('how_eyebrow')}</p>
+            <h2 class="section-title" id="how-title">${site.t('how_title')}</h2>
           </div>
         </div>
         <ol class="steps">
-          <li class="panel step"><h3>Кезеңді таңда</h3><p>Ежелгі заманнан бүгінге дейінгі төрт кезеңнің бірін аш.</p></li>
-          <li class="panel step"><h3>Тақырыпты оқы</h3><p>Оқу материалы, қысқаша түсіндірме және есте сақтайтын даталар.</p></li>
-          <li class="panel step"><h3>Тест тапсыр</h3><p>Жауаптарыңды тексеріп, қателерді түсініктемесімен бірге қара.</p></li>
+          ${[1, 2, 3].map((n) => `<li class="panel step"><h3>${site.t(`step${n}_title`)}</h3><p>${site.t(`step${n}_text`)}</p></li>`).join('')}
         </ol>
       </section>
     </div>

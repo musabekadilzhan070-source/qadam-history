@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { esc, pad2, scoreBadge } from '../util.js';
 import { icon } from '../art.js';
 import { pageHead, periodChips } from '../components.js';
+import { site } from '../site.js';
 
 export async function testsView(el, _params, _app, alive) {
   const { periods, tests } = await api.get('/api/tests');
@@ -16,6 +17,7 @@ export async function testsView(el, _params, _app, alive) {
         ${t.best_percent !== null ? scoreBadge(t.best_percent) : ''}
       </div>
       <h3>${esc(t.title)}</h3>
+      ${t.title !== t.topic_title ? `<p class="range">${esc(t.topic_title)}</p>` : ''}
       <p>${esc(t.summary)}</p>
       <div class="meta">
         <span>${icon('tests')}${t.question_count} сұрақ</span>
@@ -23,7 +25,7 @@ export async function testsView(el, _params, _app, alive) {
       </div>
       <div class="actions">
         <a class="btn btn-ghost btn-sm" href="/topics/${encodeURIComponent(t.slug)}" data-link>Оқу</a>
-        <a class="btn btn-sm" href="/topics/${encodeURIComponent(t.slug)}/test" data-link>${t.attempts ? 'Қайта тапсыру' : 'Тестті бастау'}</a>
+        <a class="btn btn-sm" href="/tests/${t.id}" data-link>${t.attempts ? 'Қайта тапсыру' : 'Тестті бастау'}</a>
       </div>
     </article>`;
 
@@ -37,7 +39,7 @@ export async function testsView(el, _params, _app, alive) {
     ${pageHead({
       eyebrow: 'Білімді тексеру',
       title: 'Тесттер',
-      text: 'Әр тақырыптың өз тесті бар. Кезеңді таңдап, тестті бастаңыз. Нәтиже мен қателердің түсініктемесі тест соңында көрсетіледі.',
+      text: site.texts.tests_page_text || 'Әр тақырыптың өз тесті бар. Кезеңді таңдап, тестті бастаңыз. Нәтиже мен қателердің түсініктемесі тест соңында көрсетіледі.',
     })}
     <div class="toolbar">${periodChips(periods, active)}</div>
     <div class="card-grid" id="test-grid"></div>`;

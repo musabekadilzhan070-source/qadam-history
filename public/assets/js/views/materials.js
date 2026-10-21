@@ -2,9 +2,13 @@ import { api } from '../api.js';
 import { esc, pad2 } from '../util.js';
 import { icon } from '../art.js';
 import { pageHead, periodChips } from '../components.js';
+import { site } from '../site.js';
+
+export const extraLink = (m) => `<li><a href="/materials/${m.id}" data-link><span class="mini-num">${icon('materials')}</span>
+  <span class="mini-body"><b>${esc(m.title)}</b><span>${m.pdf_id ? 'PDF құжат' : `${m.read_minutes} мин оқу`}</span></span></a></li>`;
 
 export async function materialsView(el, _params, _app, alive) {
-  const { periods, materials } = await api.get('/api/materials');
+  const { periods, materials, general } = await api.get('/api/materials');
   if (!alive()) return;
   let active = new URLSearchParams(location.search).get('period') || '';
   if (!periods.some((p) => p.slug === active)) active = '';
@@ -18,13 +22,18 @@ export async function materialsView(el, _params, _app, alive) {
         <p>${esc(m.summary)}</p>
         <div class="meta" style="margin-bottom:16px"><span>${icon('clock')}${m.read_minutes} мин оқу</span><span>${m.key_points.length} негізгі дерек</span></div>
         <a class="btn btn-dark btn-sm" href="/topics/${encodeURIComponent(m.slug)}" data-link>${icon('book')} Материалды оқу</a>
+        ${m.extras.length ? `<ul class="mini-list material-extras">${m.extras.map(extraLink).join('')}</ul>` : ''}
       </div>
       <ul class="key-list">${m.key_points.map((k) => `<li><b>${esc(k.label)}</b><span>${esc(k.text)}</span></li>`).join('')}</ul>
     </article>`;
 
   function draw() {
     const list = materials.filter((m) => !active || m.period_slug === active);
-    el.querySelector('#materials').innerHTML = list.map(item).join('') || '<div class="empty">Материал жоқ.</div>';
+    const common =
+      !active && general.length
+        ? `<article class="panel material material-general"><div><h2>Жалпы материалдар</h2><ul class="mini-list material-extras">${general.map(extraLink).join('')}</ul></div></article>`
+        : '';
+    el.querySelector('#materials').innerHTML = common + list.map(item).join('') || '<div class="empty">Материал жоқ.</div>';
     el.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.period === active)));
   }
 
@@ -32,7 +41,7 @@ export async function materialsView(el, _params, _app, alive) {
     ${pageHead({
       eyebrow: 'Оқу материалдары',
       title: 'Материалдар',
-      text: 'Барлық тақырыптың қысқаша мазмұны мен есте сақтайтын даталары, ұғымдары бір жерде. Толық мәтінді тақырып бетінен оқыңыз.',
+      text: site.texts.materials_page_text || 'Барлық тақырыптың қысқаша мазмұны мен есте сақтайтын даталары, ұғымдары бір жерде. Толық мәтінді тақырып бетінен оқыңыз.',
     })}
     <div class="toolbar">${periodChips(periods, active)}</div>
     <div id="materials"></div>`;

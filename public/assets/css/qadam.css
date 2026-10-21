@@ -2398,3 +2398,130 @@ main:focus {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ─── Content the organizer adds (images, extra materials, people, multi-answer questions) ─── */
+.site-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+}
+.foot-org {
+  color: var(--muted);
+  font-weight: 700;
+  text-decoration: none;
+}
+.foot-org:hover {
+  color: var(--red);
+}
+.banner-photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+img.icon {
+  object-fit: contain;
+}
+.topic-index .topic-icon {
+  width: 30px;
+  height: 30px;
+}
+.article-head h1 .topic-icon {
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.12em;
+  color: var(--red);
+}
+.topic-photo {
+  display: block;
+  width: 100%;
+  max-height: 460px;
+  margin: 0 0 22px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.topic-extra {
+  display: grid;
+  gap: 14px;
+  margin-top: 34px;
+}
+.person-card {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding: 20px;
+}
+.person-card:not(:has(.person-photo)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.person-photo {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--paper);
+}
+.person-card h3 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 800;
+}
+.person-card .prose {
+  margin-top: 10px;
+}
+.person-card .key-list {
+  margin-top: 12px;
+}
+.q-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 0 0 18px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+.q-hint {
+  margin: -6px 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--red);
+}
+.option-image {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.review-options .option-image {
+  width: 44px;
+  height: 44px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.option-multi .letter {
+  border-radius: 50%;
+}
+.material-extras {
+  margin-top: 16px;
+}
+.material-general {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 760px) {
+  .person-card {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px;
+  }
+  .option-image {
+    width: 56px;
+    height: 56px;
+  }
+}
