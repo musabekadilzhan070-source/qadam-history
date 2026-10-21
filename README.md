@@ -49,4 +49,4 @@ tests/api.test.js
 
 ## Хостинг
 
-`Dockerfile` және `render.yaml` дайын. HTTPS арқылы жұмыс істегенде `COOKIE_SECURE=1`, прокси артында `TRUST_PROXY=1` қойыңыз.
+`Dockerfile` және `render.yaml` дайын. Толық нұсқаулық: [DEPLOY.md](DEPLOY.md).
