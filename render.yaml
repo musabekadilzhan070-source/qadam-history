@@ -1,0 +1,26 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: qadam-history
+    runtime: node
+    # Starter жоспары тұрақты дискімен келеді: аккаунттар мен нәтижелер сақталады.
+    # Тегін көрсетілім үшін plan: free қойып, төмендегі DATA_DIR пен disk бөлігін өшіріңіз
+    # (онда сервер қайта қосылған сайын аккаунттар мен нәтижелер өшеді).
+    plan: starter
+    region: frankfurt
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/overview
+    envVars:
+      - key: NODE_VERSION
+        value: "22.13.1"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: qadam-data
+      mountPath: /var/data
+      sizeGB: 1
