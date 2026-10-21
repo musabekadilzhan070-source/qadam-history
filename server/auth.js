@@ -39,24 +39,24 @@ function cookieString(value, maxAgeMs, req) {
   return parts.join('; ');
 }
 
-export function startSession(req, res, userId) {
+export async function startSession(req, res, userId) {
   const token = crypto.randomBytes(32).toString('base64url');
-  run('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', sha256(token), userId, Date.now() + TTL_MS);
+  await run('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', sha256(token), userId, Date.now() + TTL_MS);
   res.setHeader('Set-Cookie', cookieString(token, TTL_MS, req));
 }
 
-export function endSession(req, res) {
+export async function endSession(req, res) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
-  if (token) run('DELETE FROM sessions WHERE token_hash = ?', sha256(token));
+  if (token) await run('DELETE FROM sessions WHERE token_hash = ?', sha256(token));
   res.setHeader('Set-Cookie', cookieString('', 0, req));
 }
 
 /** Attaches req.user from the session cookie. */
-export function sessionMiddleware(req, _res, next) {
+export async function sessionMiddleware(req, _res, next) {
   req.user = null;
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) {
-    const row = get(
+    const row = await get(
       `SELECT u.id, u.username, u.display_name, u.created_at FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`,
@@ -100,5 +100,5 @@ export function makeLimiter({ max, windowMs }) {
 }
 
 export function purgeExpiredSessions() {
-  run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
+  return run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
 }

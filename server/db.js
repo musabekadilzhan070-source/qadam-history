@@ -1,11 +1,12 @@
-import { DatabaseSync } from 'node:sqlite';
+import { createClient } from '@libsql/client';
 import { config } from './config.js';
 
-export const db = new DatabaseSync(config.dbFile);
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+// libSQL client: a local SQLite file in development, a Turso database in production
+// (TURSO_DATABASE_URL + TURSO_AUTH_TOKEN).
+export const db = createClient({ url: config.dbUrl, authToken: config.dbAuthToken });
 
 // Schema is additive only: CREATE ... IF NOT EXISTS never touches existing rows.
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS periods (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT NOT NULL UNIQUE,
@@ -79,20 +80,29 @@ CREATE INDEX IF NOT EXISTS idx_topics_period ON topics(period_id, position);
 CREATE INDEX IF NOT EXISTS idx_questions_topic ON questions(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_options_question ON options(question_id, position);
 CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_id, created_at);
-`);
+`;
 
-export const all = (sql, ...params) => db.prepare(sql).all(...params);
-export const get = (sql, ...params) => db.prepare(sql).get(...params);
-export const run = (sql, ...params) => db.prepare(sql).run(...params);
+export async function migrate() {
+  if (config.dbUrl.startsWith('file:')) await db.execute('PRAGMA journal_mode = WAL');
+  await db.executeMultiple(SCHEMA);
+}
 
-export function transaction(fn) {
-  db.exec('BEGIN');
-  try {
-    const out = fn();
-    db.exec('COMMIT');
-    return out;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+// Rows as plain objects with numbers (libSQL returns integers as numbers, ids as bigint only in lastInsertRowid).
+const plain = (result) =>
+  result.rows.map((row) => Object.fromEntries(result.columns.map((col, i) => [col, row[i]])));
+
+export const all = async (sql, ...args) => plain(await db.execute({ sql, args }));
+export const get = async (sql, ...args) => (await all(sql, ...args))[0];
+export async function run(sql, ...args) {
+  const r = await db.execute({ sql, args });
+  return { changes: r.rowsAffected, lastInsertRowid: r.lastInsertRowid === undefined ? null : Number(r.lastInsertRowid) };
+}
+
+/** Runs statements ([sql, ...args]) atomically in one write transaction. */
+export async function batch(statements) {
+  const results = await db.batch(
+    statements.map(([sql, ...args]) => ({ sql, args })),
+    'write',
+  );
+  return results.map((r) => ({ lastInsertRowid: r.lastInsertRowid === undefined ? null : Number(r.lastInsertRowid) }));
 }

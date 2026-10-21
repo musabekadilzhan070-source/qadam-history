@@ -24,14 +24,21 @@ function loadDotEnv() {
 loadDotEnv();
 
 const dataDir = path.resolve(ROOT, process.env.DATA_DIR || 'data');
+const tursoUrl = (process.env.TURSO_DATABASE_URL || '').trim();
+
+if (!tursoUrl && process.env.VERCEL) {
+  throw new Error('TURSO_DATABASE_URL орнатылмаған: Vercel-де деректер Turso дерекқорында сақталады (DEPLOY.md).');
+}
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
   host: process.env.HOST || '0.0.0.0',
-  cookieSecure: process.env.COOKIE_SECURE === '1',
+  cookieSecure: process.env.COOKIE_SECURE === '1' || Boolean(process.env.VERCEL),
   dataDir,
-  dbFile: process.env.DB_FILE === ':memory:' ? ':memory:' : path.join(dataDir, 'qadam.sqlite'),
+  // Turso in production, a local SQLite file otherwise. DB_FILE overrides the file (tests).
+  dbUrl: tursoUrl || `file:${process.env.DB_FILE || path.join(dataDir, 'qadam.sqlite')}`,
+  dbAuthToken: (process.env.TURSO_AUTH_TOKEN || '').trim() || undefined,
   publicDir: path.join(ROOT, 'public'),
 };
 
-if (config.dbFile !== ':memory:') fs.mkdirSync(dataDir, { recursive: true });
+if (!tursoUrl && !process.env.DB_FILE) fs.mkdirSync(dataDir, { recursive: true });

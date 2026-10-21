@@ -1,9 +1,15 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-process.env.DB_FILE = ':memory:';
-process.env.NODE_ENV = 'test';
-const { app } = await import('../server/index.js');
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qadam-test-'));
+process.env.DB_FILE = path.join(tmp, 'test.sqlite');
+delete process.env.TURSO_DATABASE_URL;
+const { app, whenReady } = await import('../server/app.js');
+await whenReady();
 
 let server;
 let base;
@@ -12,7 +18,10 @@ before(async () => {
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(() => {
+  server.close();
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 function client() {
   let cookie = '';
