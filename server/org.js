@@ -3,7 +3,11 @@ import express from 'express';
 import { config } from './config.js';
 import { all, get, run, batch } from './db.js';
 import { KINDS, UPLOAD_LIMIT, checkUpload } from './files.js';
-import { draftStatus, publish, listPublications, restoreDraft, readSetting } from './publish.js';
+import { draftStatus, publish, publishTest, testLiveState, listPublications, restoreDraft, readSetting, published } from './publish.js';
+import { TYPES, CHOICE_TYPES, settingsOf, dataOf, assembleQuestions, testProblems, readyQuestions, gradable, grade } from './questions.js';
+import { studentPaper } from './quiz.js';
+import { hashPassword, endAllSessions } from './auth.js';
+import { EMBLEM_IDS, EMBLEM_CATEGORIES } from '../public/assets/js/emblems.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -146,6 +150,10 @@ async function parseIcon(v) {
     if (![...ICON_NAMES, ...EMBLEM_NAMES].includes(v.name)) fail('Мұндай белгіше кітапханада жоқ.');
     return { kind: 'builtin', name: v.name, size };
   }
+  if (v.kind === 'emblem') {
+    if (!EMBLEM_IDS.has(String(v.name))) fail('Мұндай эмблема кітапханада жоқ.');
+    return { kind: 'emblem', name: String(v.name), size };
+  }
   if (v.kind === 'file') {
     const id = optId(v.id);
     await checkFile(id, ['icon', 'image']);
@@ -185,6 +193,8 @@ async function fileUsage() {
   )) {
     add(o.image_id, `Жауап нұсқасы: ${o.title}`);
   }
+  for (const x of await all('SELECT title, cover_image_id FROM tests WHERE cover_image_id IS NOT NULL')) add(x.cover_image_id, `Тест мұқабасы: ${x.title}`);
+  for (const e of await all('SELECT name, file_id FROM emblems')) add(e.file_id, `Эмблема: ${e.name}`);
   const texts = await readSetting('texts', {});
   add(optId(texts.banner_image_id), 'Басты баннер');
   const icons = await readSetting('icons', {});
@@ -192,14 +202,28 @@ async function fileUsage() {
   return uses;
 }
 
+async function draftTests() {
+  const tests = await all(
+    `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.description, x.cover_image_id,
+            x.settings, x.published, x.updated_at
+     FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
+  );
+  const questions = await all('SELECT * FROM questions WHERE test_id IS NOT NULL');
+  const options = await all('SELECT o.* FROM options o JOIN questions q ON q.id = o.question_id');
+  const testOf = new Map(questions.map((q) => [q.id, q.test_id]));
+  return tests.map((x) => ({
+    ...x,
+    settings: settingsOf(x.settings),
+    questions: assembleQuestions(
+      questions.filter((q) => q.test_id === x.id),
+      options.filter((o) => testOf.get(o.question_id) === x.id),
+    ),
+  }));
+}
+
 async function state() {
   const uses = await fileUsage();
-  const counts = await all(
-    `SELECT x.id, COUNT(DISTINCT q.id) AS question_count,
-            SUM(CASE WHEN q.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM options o WHERE o.question_id = q.id AND o.is_correct = 1) THEN 1 ELSE 0 END) AS missing_correct
-     FROM tests x LEFT JOIN questions q ON q.test_id = x.id GROUP BY x.id`,
-  );
-  const countById = new Map(counts.map((c) => [c.id, c]));
+  const live = new Set((await published()).tests.map((x) => x.id));
   return {
     periods: await all('SELECT id, slug, position, title, range_label, summary FROM periods ORDER BY position, id'),
     topics: (await all('SELECT * FROM topics WHERE deleted = 0 ORDER BY period_id, position, id')).map((t) => ({
@@ -208,21 +232,17 @@ async function state() {
       icon: JSON.parse(t.icon || 'null'),
     })),
     // A test of a deleted topic is shown as unlinked until the organizer picks a new topic.
-    tests: (
-      await all(
-        `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.published, x.updated_at
-         FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
-      )
-    ).map((x) => ({
+    tests: (await draftTests()).map(({ questions, ...x }) => ({
       ...x,
-      question_count: countById.get(x.id)?.question_count || 0,
-      missing_correct: countById.get(x.id)?.missing_correct || 0,
+      question_count: gradable(questions).length,
+      problems: testProblems({ ...x, questions }),
+      live: live.has(x.id),
     })),
-    materials: await all('SELECT * FROM materials ORDER BY topic_id, position, id'),
     persons: (await all('SELECT * FROM persons ORDER BY position, id')).map((p) => ({ ...p, facts: JSON.parse(p.facts || '[]') })),
     files: (await all('SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files ORDER BY id DESC')).map(
       (f) => ({ ...f, used_by: uses.get(f.id) || [] }),
     ),
+    emblems: await all('SELECT e.id, e.name, e.category, e.file_id, f.version FROM emblems e JOIN files f ON f.id = e.file_id ORDER BY e.id DESC'),
     texts: await readSetting('texts', {}),
     icons: await readSetting('icons', {}),
     status: await draftStatus(),
@@ -231,25 +251,139 @@ async function state() {
 }
 
 async function testDetail(id) {
-  const test = await get(
-    `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.published, x.updated_at
-     FROM tests x LEFT JOIN topics t ON t.id = x.topic_id WHERE x.id = ?`,
-    id,
-  );
+  const test = (await draftTests()).find((x) => x.id === id);
   if (!test) return null;
-  const questions = await all('SELECT id, text, explanation, image_id FROM questions WHERE test_id = ? ORDER BY position, id', id);
-  const options = await all(
-    `SELECT o.id, o.question_id, o.text, o.image_id, o.is_correct FROM options o JOIN questions q ON q.id = o.question_id
-     WHERE q.test_id = ? ORDER BY o.position, o.id`,
-    id,
-  );
-  return {
-    ...test,
-    questions: questions.map((q) => ({
-      ...q,
-      options: options.filter((o) => o.question_id === q.id).map((o) => ({ id: o.id, text: o.text, image_id: o.image_id, is_correct: Boolean(o.is_correct) })),
-    })),
+  return { ...test, problems: testProblems(test), live_state: await testLiveState(id) };
+}
+
+// ─── Test builder input ───────────────────────────────────────────
+/**
+ * Reads the questions the cabinet sends into the question model (see questions.js).
+ * Saving is lenient so an unfinished test can be kept as a draft; testProblems() decides publishing.
+ */
+function parseQuestions(input, files) {
+  const one = (q, label, inContext) => {
+    let type = TYPES.includes(q?.type) ? q.type : 'single';
+    if (inContext && type === 'context') type = 'single';
+    const imageId = optId(q?.image_id);
+    if (imageId) files.add(imageId);
+    const out = {
+      id: optId(q?.id),
+      type,
+      text: str(q?.text, type === 'context' ? 300 : 2000, label),
+      explanation: str(q?.explanation, 2000, `${label}: түсініктеме`),
+      image_id: imageId,
+      points: Math.max(0, Math.min(100, Math.round(Number(q?.points ?? 1)))),
+      options: [],
+      data: dataOf(type, q?.data),
+    };
+    if (Number.isNaN(out.points)) out.points = 1;
+    if (CHOICE_TYPES.includes(type)) {
+      out.options = (Array.isArray(q?.options) ? q.options : []).slice(0, 10).map((o, oi) => {
+        const oImage = optId(o?.image_id);
+        if (oImage) files.add(oImage);
+        return { id: optId(o?.id), text: str(o?.text, 500, `${label}, ${oi + 1}-жауап`), image_id: oImage, is_correct: Boolean(o?.is_correct) };
+      });
+    }
+    if (type === 'context') {
+      out.points = 0;
+      out.children = (Array.isArray(q?.children) ? q.children : []).slice(0, 40).map((c, ci) => one(c, `${label}, ${ci + 1}-сұрақ`, true));
+    }
+    return out;
   };
+  return (Array.isArray(input) ? input : []).slice(0, 200).map((q, i) => one(q, `${i + 1}-сұрақ`, false));
+}
+
+async function parseTest(body) {
+  const topicId = optId(body.topic_id);
+  if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
+  await checkTopic(topicId);
+  const coverId = optId(body.cover_image_id);
+  const files = new Set(coverId ? [coverId] : []);
+  const test = {
+    topic_id: topicId,
+    title: str(body.title, 160, 'Тест атауы', { required: true }),
+    description: str(body.description, 2000, 'Сипаттама'),
+    cover_image_id: coverId,
+    settings: settingsOf(body.settings),
+    questions: parseQuestions(body.questions, files),
+  };
+  if (files.size) {
+    const found = await all(`SELECT id FROM files WHERE kind = 'image' AND id IN (${[...files].join(',')})`);
+    if (found.length < files.size) fail('Тесттегі кейбір сурет табылмады. Суретті қайта жүктеңіз.');
+  }
+  return test;
+}
+
+/** Writes a parsed test over test `id`: rows are kept by id, new ones inserted, the rest removed. */
+async function writeTest(id, test) {
+  const existingQ = new Set((await all('SELECT id FROM questions WHERE test_id = ?', id)).map((r) => r.id));
+  const existingO = new Map(
+    (await all('SELECT o.id, o.question_id FROM options o JOIN questions q ON q.id = o.question_id WHERE q.test_id = ?', id)).map((r) => [
+      r.id,
+      r.question_id,
+    ]),
+  );
+  let nextQ = (await get("SELECT MAX(COALESCE((SELECT MAX(id) FROM questions), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'questions'), 0)) AS m")).m;
+  let nextO = (await get("SELECT MAX(COALESCE((SELECT MAX(id) FROM options), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'options'), 0)) AS m")).m;
+  const statements = [
+    [
+      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
+      test.title, test.topic_id, test.description, test.cover_image_id, JSON.stringify(test.settings), id,
+    ],
+  ];
+  const keptQ = new Set();
+  const keptO = new Set();
+  const put = (q, position, parentId) => {
+    let qid = q.id && existingQ.has(q.id) && !keptQ.has(q.id) ? q.id : null;
+    const values = [position, q.type, q.text, q.explanation, q.image_id, q.points, JSON.stringify(q.data), parentId, test.topic_id];
+    if (qid) {
+      statements.push([
+        'UPDATE questions SET position = ?, type = ?, text = ?, explanation = ?, image_id = ?, points = ?, data = ?, parent_id = ?, topic_id = ? WHERE id = ?',
+        ...values, qid,
+      ]);
+    } else {
+      qid = ++nextQ;
+      statements.push([
+        'INSERT INTO questions (position, type, text, explanation, image_id, points, data, parent_id, topic_id, id, test_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ...values, qid, id,
+      ]);
+    }
+    keptQ.add(qid);
+    q.options.forEach((o, oi) => {
+      let oid = o.id && existingO.get(o.id) === qid && !keptO.has(o.id) ? o.id : null;
+      if (oid) {
+        statements.push(['UPDATE options SET position = ?, text = ?, image_id = ?, is_correct = ? WHERE id = ?', oi + 1, o.text, o.image_id, bool(o.is_correct), oid]);
+      } else {
+        oid = ++nextO;
+        statements.push([
+          'INSERT INTO options (id, question_id, position, text, image_id, is_correct) VALUES (?, ?, ?, ?, ?, ?)',
+          oid, qid, oi + 1, o.text, o.image_id, bool(o.is_correct),
+        ]);
+      }
+      keptO.add(oid);
+    });
+    (q.children || []).forEach((c, ci) => put(c, ci + 1, qid));
+  };
+  test.questions.forEach((q, i) => put(q, i + 1, null));
+  for (const oid of existingO.keys()) if (!keptO.has(oid)) statements.push(['DELETE FROM options WHERE id = ?', oid]);
+  for (const qid of existingQ) if (!keptQ.has(qid)) statements.push(['DELETE FROM questions WHERE id = ?', qid]);
+  await batch(statements);
+}
+
+/** Gives unsaved questions and options stable temporary ids (by position) for the preview. */
+function previewIds(questions) {
+  let n = 0;
+  const walk = (q) => {
+    n += 1;
+    q.id = q.id || -n;
+    q.options.forEach((o, i) => {
+      o.id = o.id || -(n * 100 + i + 1);
+    });
+    (q.children || []).forEach(walk);
+  };
+  questions.forEach(walk);
+  return questions;
 }
 
 export const orgRouter = express.Router();
@@ -432,7 +566,7 @@ orgRouter.delete(
             ['DELETE FROM options WHERE question_id IN (SELECT q.id FROM questions q JOIN tests x ON x.id = q.test_id WHERE x.topic_id = ?)', id],
             ['DELETE FROM questions WHERE test_id IN (SELECT id FROM tests WHERE topic_id = ?)', id],
             ['DELETE FROM tests WHERE topic_id = ?', id],
-            ['DELETE FROM materials WHERE topic_id = ?', id],
+            ['UPDATE materials SET topic_id = NULL, published = 0 WHERE topic_id = ?', id],
             ['DELETE FROM persons WHERE topic_id = ?', id],
           ]
         : [
@@ -459,69 +593,8 @@ function reorderRoute(table) {
 }
 
 orgRouter.post('/topics/reorder', reorderRoute('topics'));
-orgRouter.post('/materials/reorder', reorderRoute('materials'));
 orgRouter.post('/tests/reorder', reorderRoute('tests'));
 orgRouter.post('/persons/reorder', reorderRoute('persons'));
-
-// ─── Materials ────────────────────────────────────────────────────
-async function materialFields(body) {
-  const topicId = optId(body.topic_id);
-  await checkTopic(topicId);
-  const imageId = optId(body.image_id);
-  const pdfId = optId(body.pdf_id);
-  await checkFile(imageId, ['image']);
-  await checkFile(pdfId, ['pdf']);
-  const f = {
-    topic_id: topicId,
-    title: str(body.title, 160, 'Атауы', { required: true }),
-    body: str(body.body, 60000, 'Мәтіні'),
-    image_id: imageId,
-    pdf_id: pdfId,
-    published: bool(body.published),
-  };
-  if (!f.body && !f.pdf_id) fail('Материалға мәтін жазыңыз немесе PDF файл тіркеңіз.');
-  return f;
-}
-
-orgRouter.post(
-  '/materials',
-  wrap(async (req, res) => {
-    const f = await materialFields(req.body || {});
-    const position = await nextPosition('materials');
-    const { lastInsertRowid } = await run(
-      'INSERT INTO materials (topic_id, position, title, body, image_id, pdf_id, published) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      f.topic_id, position, f.title, f.body, f.image_id, f.pdf_id, f.published,
-    );
-    res.status(201).json({ id: lastInsertRowid });
-  }),
-);
-
-orgRouter.put(
-  '/materials/:id',
-  wrap(async (req, res) => {
-    const id = Number(req.params.id);
-    await mustExist('materials', id);
-    const f = await materialFields(req.body || {});
-    await run(
-      `UPDATE materials SET topic_id = ?, title = ?, body = ?, image_id = ?, pdf_id = ?, published = ?, updated_at = datetime('now') WHERE id = ?`,
-      f.topic_id, f.title, f.body, f.image_id, f.pdf_id, f.published, id,
-    );
-    res.json({ ok: true });
-  }),
-);
-
-orgRouter.delete(
-  '/materials/:id',
-  wrap(async (req, res) => {
-    const id = Number(req.params.id);
-    await mustExist('materials', id);
-    await batch([
-      ['UPDATE files SET material_id = NULL WHERE material_id = ?', id],
-      ['DELETE FROM materials WHERE id = ?', id],
-    ]);
-    res.json({ ok: true });
-  }),
-);
 
 // ─── Persons (khans and historical figures) ───────────────────────
 async function personFields(body) {
@@ -584,6 +657,8 @@ orgRouter.delete(
 );
 
 // ─── Tests ────────────────────────────────────────────────────────
+const sendTest = async (res, id, status = 200) => res.status(status).json(await testDetail(id));
+
 orgRouter.get(
   '/tests/:id',
   wrap(async (req, res) => {
@@ -593,95 +668,98 @@ orgRouter.get(
   }),
 );
 
+/** New test: only a topic and title are needed; a full builder body is saved as well. */
 orgRouter.post(
   '/tests',
   wrap(async (req, res) => {
-    const topicId = optId(req.body?.topic_id);
-    if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
-    await checkTopic(topicId);
-    const title = str(req.body?.title, 160, 'Тест атауы', { required: true });
-    const position = await nextPosition('tests', 'WHERE topic_id = ?', topicId);
-    const { lastInsertRowid } = await run(
-      'INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, ?)',
-      topicId,
-      position,
-      title,
-      bool(req.body?.published),
-    );
-    res.status(201).json({ id: lastInsertRowid });
+    const test = await parseTest(req.body || {});
+    const position = await nextPosition('tests', 'WHERE topic_id = ?', test.topic_id);
+    const { lastInsertRowid } = await run('INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, 0)', test.topic_id, position, test.title);
+    await writeTest(lastInsertRowid, test);
+    await sendTest(res, lastInsertRowid, 201);
   }),
 );
 
-/** Saves the whole test: title, topic, visibility and every question with its options. */
+/** Saves the whole test as a draft. A live test keeps showing its published version until it is published again. */
 orgRouter.put(
   '/tests/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
     await mustExist('tests', id);
-    const body = req.body || {};
-    const topicId = optId(body.topic_id);
-    if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
-    await checkTopic(topicId);
-    const title = str(body.title, 160, 'Тест атауы', { required: true });
-    const input = Array.isArray(body.questions) ? body.questions.slice(0, 200) : [];
+    await writeTest(id, await parseTest(req.body || {}));
+    await sendTest(res, id);
+  }),
+);
 
-    const existingQ = new Set((await all('SELECT id FROM questions WHERE test_id = ?', id)).map((r) => r.id));
-    const existingO = new Map(
-      (await all('SELECT o.id, o.question_id FROM options o JOIN questions q ON q.id = o.question_id WHERE q.test_id = ?', id)).map((r) => [
-        r.id,
-        r.question_id,
-      ]),
-    );
-    let nextQ = (await get('SELECT COALESCE(MAX(id), 0) AS m FROM questions')).m;
-    let nextO = (await get('SELECT COALESCE(MAX(id), 0) AS m FROM options')).m;
-
-    const statements = [
-      ['UPDATE tests SET title = ?, topic_id = ?, published = ?, updated_at = datetime(\'now\') WHERE id = ?', title, topicId, bool(body.published), id],
-    ];
-    const keptQ = new Set();
-    const keptO = new Set();
-    for (const [qi, q] of input.entries()) {
-      const text = str(q?.text, 2000, `${qi + 1}-сұрақ`, { required: true });
-      const qImage = optId(q?.image_id);
-      await checkFile(qImage, ['image']);
-      const options = (Array.isArray(q?.options) ? q.options : []).slice(0, 10);
-      if (options.length < 2) fail(`${qi + 1}-сұраққа кемінде екі жауап нұсқасын қосыңыз.`);
-      let qid = optId(q?.id);
-      if (qid && existingQ.has(qid)) {
-        statements.push([
-          'UPDATE questions SET position = ?, text = ?, explanation = ?, image_id = ?, topic_id = ? WHERE id = ?',
-          qi + 1, text, str(q?.explanation, 2000, 'Түсініктеме'), qImage, topicId, qid,
-        ]);
-      } else {
-        qid = ++nextQ;
-        statements.push([
-          'INSERT INTO questions (id, topic_id, test_id, position, text, explanation, image_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          qid, topicId, id, qi + 1, text, str(q?.explanation, 2000, 'Түсініктеме'), qImage,
-        ]);
-      }
-      keptQ.add(qid);
-      for (const [oi, o] of options.entries()) {
-        const oText = str(o?.text, 500, `${qi + 1}-сұрақтың ${oi + 1}-жауабы`);
-        const oImage = optId(o?.image_id);
-        await checkFile(oImage, ['image']);
-        if (!oText && !oImage) fail(`${qi + 1}-сұрақтың ${oi + 1}-жауабына мәтін немесе сурет қосыңыз.`);
-        let oid = optId(o?.id);
-        if (oid && existingO.get(oid) === qid) {
-          statements.push(['UPDATE options SET position = ?, text = ?, image_id = ?, is_correct = ? WHERE id = ?', oi + 1, oText, oImage, bool(o?.is_correct), oid]);
-        } else {
-          oid = ++nextO;
-          statements.push([
-            'INSERT INTO options (id, question_id, position, text, image_id, is_correct) VALUES (?, ?, ?, ?, ?, ?)',
-            oid, qid, oi + 1, oText, oImage, bool(o?.is_correct),
-          ]);
-        }
-        keptO.add(oid);
-      }
+/** Publishes this test to students now, after the full check; the rest of the draft is untouched. */
+orgRouter.post(
+  '/tests/:id/publish',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('tests', id);
+    const test = await testDetail(id);
+    if (test.problems.length) return res.status(400).json({ error: 'Тест жарияланбады: алдымен қателерді түзетіңіз.', problems: test.problems });
+    await run('UPDATE tests SET published = 1 WHERE id = ?', id);
+    const error = await publishTest(id, true, `Тест жарияланды: ${test.title}`);
+    if (error) {
+      await run('UPDATE tests SET published = 0 WHERE id = ?', id);
+      return res.status(400).json({ error, problems: [error] });
     }
-    for (const oid of existingO.keys()) if (!keptO.has(oid)) statements.push(['DELETE FROM options WHERE id = ?', oid]);
-    for (const qid of existingQ) if (!keptQ.has(qid)) statements.push(['DELETE FROM questions WHERE id = ?', qid]);
-    await batch(statements);
-    res.json(await testDetail(id));
+    await sendTest(res, id);
+  }),
+);
+
+orgRouter.post(
+  '/tests/:id/hide',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('tests', id);
+    const test = await get('SELECT title FROM tests WHERE id = ?', id);
+    await run('UPDATE tests SET published = 0 WHERE id = ?', id);
+    await publishTest(id, false, `Тест жасырылды: ${test.title}`);
+    await sendTest(res, id);
+  }),
+);
+
+orgRouter.post(
+  '/tests/:id/duplicate',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('tests', id);
+    const source = await testDetail(id);
+    const strip = (q) => ({ ...q, id: null, options: q.options.map((o) => ({ ...o, id: null })), children: q.children?.map(strip) });
+    const copy = { ...source, title: `${source.title} (көшірме)`.slice(0, 160), questions: source.questions.map(strip) };
+    const topicId = source.topic_id ?? (await get('SELECT topic_id FROM tests WHERE id = ?', id)).topic_id;
+    const position = await nextPosition('tests', 'WHERE topic_id = ?', topicId);
+    const { lastInsertRowid } = await run('INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, 0)', topicId, position, copy.title);
+    await writeTest(lastInsertRowid, { ...copy, topic_id: topicId });
+    await sendTest(res, lastInsertRowid, 201);
+  }),
+);
+
+/**
+ * Student view of the test as it is in the builder now, without saving anything:
+ * without answers it returns the paper; with answers it grades them. Nothing is stored.
+ */
+orgRouter.post(
+  '/preview',
+  wrap(async (req, res) => {
+    const body = req.body?.test || {};
+    const test = await parseTest({ ...body, title: String(body.title || '').trim() || 'Атаусыз тест' });
+    test.questions = previewIds(test.questions);
+    const ready = { ...test, questions: readyQuestions(test.questions) };
+    const problems = testProblems(test);
+    if (!gradable(ready.questions).length) {
+      return res.status(400).json({ error: 'Алдын ала қарауға дайын сұрақ жоқ.', problems });
+    }
+    const answers = req.body?.answers;
+    if (answers && typeof answers === 'object') {
+      const served = Array.isArray(req.body?.served) ? req.body.served.map(Number) : gradable(ready.questions).map((q) => q.id);
+      const result = grade(ready, served, answers, test.settings);
+      return res.json({ ...result, stored: undefined, passed: result.percent >= test.settings.pass_percent, pass_percent: test.settings.pass_percent });
+    }
+    const paper = studentPaper(ready, test.settings);
+    res.json({ title: test.title, description: test.description, cover_image_id: test.cover_image_id, ...paper.meta, units: paper.units, served: paper.served, problems });
   }),
 );
 
@@ -690,12 +768,83 @@ orgRouter.delete(
   wrap(async (req, res) => {
     const id = Number(req.params.id);
     await mustExist('tests', id);
+    const title = (await get('SELECT title FROM tests WHERE id = ?', id)).title;
     await batch([
       ['DELETE FROM options WHERE question_id IN (SELECT id FROM questions WHERE test_id = ?)', id],
       ['DELETE FROM questions WHERE test_id = ?', id],
       ['DELETE FROM tests WHERE id = ?', id],
     ]);
+    // A deleted test also leaves the students' pages at once.
+    if ((await published()).tests.some((x) => x.id === id)) await publishTest(id, false, `Тест өшірілді: ${title}`);
     res.json({ ok: true });
+  }),
+);
+
+// ─── Emblem library: the organizer's own uploads (the built-in set is in emblems.js) ───
+const CATEGORY_KEYS = EMBLEM_CATEGORIES.map(([k]) => k);
+const emblemFields = (body) => {
+  const category = String(body?.category || '');
+  if (!CATEGORY_KEYS.includes(category)) fail('Эмблема санатын таңдаңыз.');
+  return { name: str(body?.name, 80, 'Эмблема атауы', { required: true }), category };
+};
+
+orgRouter.post(
+  '/emblems',
+  wrap(async (req, res) => {
+    const f = emblemFields(req.body);
+    const fileId = optId(req.body?.file_id);
+    if (!fileId) fail('Эмблема файлын жүктеңіз.');
+    await checkFile(fileId, ['icon', 'image']);
+    const { lastInsertRowid } = await run('INSERT INTO emblems (name, category, file_id) VALUES (?, ?, ?)', f.name, f.category, fileId);
+    res.status(201).json({ id: lastInsertRowid });
+  }),
+);
+
+orgRouter.put(
+  '/emblems/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('emblems', id);
+    const f = emblemFields(req.body);
+    await run('UPDATE emblems SET name = ?, category = ? WHERE id = ?', f.name, f.category, id);
+    res.json({ ok: true });
+  }),
+);
+
+orgRouter.delete(
+  '/emblems/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('emblems', id);
+    // The file stays in «Файлдар»: a topic may still show it.
+    await run('DELETE FROM emblems WHERE id = ?', id);
+    res.json({ ok: true });
+  }),
+);
+
+// ─── Students: list and temporary passwords (when email reset is not set up) ───
+orgRouter.get(
+  '/students',
+  wrap(async (_req, res) => {
+    res.json({
+      students: await all(
+        `SELECT u.id, u.username, u.email, u.display_name, u.created_at, COUNT(a.id) AS attempts
+         FROM users u LEFT JOIN attempts a ON a.user_id = u.id GROUP BY u.id ORDER BY u.id DESC LIMIT 500`,
+      ),
+    });
+  }),
+);
+
+orgRouter.post(
+  '/students/:id/password',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    await mustExist('users', id);
+    const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+    const password = Array.from(crypto.randomBytes(10), (b) => alphabet[b % alphabet.length]).join('');
+    await run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(password), id);
+    await endAllSessions(id);
+    res.json({ password });
   }),
 );
 

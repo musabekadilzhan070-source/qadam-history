@@ -3,7 +3,8 @@ import { org, setUnauthorizedHandler } from './api.js';
 import { esc, icon, toast, dialog, confirmDialog } from './ui.js';
 import { dashboardView } from './dashboard.js';
 import { topicsView, topicEditView } from './topics.js';
-import { materialsView, materialEditView } from './materials.js';
+import { emblemsView } from './emblems.js';
+import { studentsView } from './students.js';
 import { testsView, testEditView } from './tests.js';
 import { imagesView } from './images.js';
 import { iconsView } from './icons.js';
@@ -18,11 +19,11 @@ const ROUTES = [
   { re: /^\/organizer\/?$/, nav: 'home', view: dashboardView, title: 'Басқару тақтасы' },
   { re: /^\/organizer\/topics\/?$/, nav: 'topics', view: topicsView, title: 'Тақырыптар' },
   { re: /^\/organizer\/topics\/(new|\d+)\/?$/, nav: 'topics', view: topicEditView, title: 'Тақырып' },
-  { re: /^\/organizer\/materials\/?$/, nav: 'materials', view: materialsView, title: 'Материалдар' },
-  { re: /^\/organizer\/materials\/(new|\d+)\/?$/, nav: 'materials', view: materialEditView, title: 'Материал' },
   { re: /^\/organizer\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/organizer\/tests\/(\d+)\/?$/, nav: 'tests', view: testEditView, title: 'Тест' },
   { re: /^\/organizer\/images\/?$/, nav: 'images', view: imagesView, title: 'Суреттер' },
+  { re: /^\/organizer\/emblems\/?$/, nav: 'emblems', view: emblemsView, title: 'Эмблемалар кітапханасы' },
+  { re: /^\/organizer\/students\/?$/, nav: 'students', view: studentsView, title: 'Оқушылар' },
   { re: /^\/organizer\/icons\/?$/, nav: 'icons', view: iconsView, title: 'Белгішелер' },
   { re: /^\/organizer\/persons\/?$/, nav: 'persons', view: personsView, title: 'Хандар мен тұлғалар' },
   { re: /^\/organizer\/persons\/(new|\d+)\/?$/, nav: 'persons', view: personEditView, title: 'Тұлға' },
@@ -169,7 +170,7 @@ async function publish() {
   let note = '';
   const choice = await dialog({
     title: 'Сайтқа жариялау',
-    body: `<p>Сақталған барлық өзгерістер оқушыларға көрінеді. Жасырын деп белгіленген тақырып, тест, материал және тұлғалар көрінбейді.</p>
+    body: `<p>Сақталған барлық өзгерістер оқушыларға көрінеді. Жасырын деп белгіленген тақырып, тест және тұлғалар көрінбейді.</p>
       <label class="o-field"><span class="o-label">Қысқаша түсініктеме (міндетті емес)</span><input id="pub-note" maxlength="200" placeholder="Мысалы: жаңа тест қосылды" /></label>`,
     buttons: [
       { label: 'Болдырмау', value: null, kind: 'ghost' },

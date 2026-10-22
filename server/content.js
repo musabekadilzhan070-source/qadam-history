@@ -1,5 +1,7 @@
 import { all } from './db.js';
 import { published } from './publish.js';
+import { gradable, settingsOf } from './questions.js';
+import { defaultTopicEmblem } from './emblem-defaults.js';
 
 // Everything here reads the published snapshot, so drafts never reach students.
 
@@ -16,10 +18,29 @@ async function bestByTest(userId) {
   return new Map(rows.map((r) => [r.test_id, { best: Math.round(r.best * 100), attempts: r.attempts }]));
 }
 
+/** Questions a student gets from a test: every gradable question, or the organizer's limit. */
+const servedCount = (x) => {
+  const all = gradable(x.questions).length;
+  const limit = settingsOf(x.settings).question_limit;
+  return limit ? Math.min(limit, all) : all;
+};
+
 const testCard = (x, best) => {
   const b = best.get(x.id);
-  return { id: x.id, title: x.title, question_count: x.questions.length, best_percent: b ? b.best : null, attempts: b ? b.attempts : 0 };
+  const st = settingsOf(x.settings);
+  return {
+    id: x.id,
+    title: x.title,
+    description: x.description || '',
+    cover_image_id: x.cover_image_id ?? null,
+    question_count: servedCount(x),
+    time_limit_min: st.time_limit_min || (st.question_time_sec ? Math.ceil((st.question_time_sec * servedCount(x)) / 60) : 0),
+    best_percent: b ? b.best : null,
+    attempts: b ? b.attempts : 0,
+  };
 };
+
+const topicIcon = (t) => t.icon || defaultTopicEmblem(t.slug);
 
 /** Best result over a topic's tests, for the topic lists. */
 function topicProgress(tests, best) {
@@ -38,7 +59,7 @@ function periodStats(snap, period, best, userId) {
     ...period,
     topic_count: topics.length,
     test_count: tests.length,
-    question_count: tests.reduce((s, x) => s + x.questions.length, 0),
+    question_count: tests.reduce((s, x) => s + servedCount(x), 0),
     tests_done: userId ? tests.filter((x) => best.has(x.id)).length : null,
   };
 }
@@ -52,8 +73,8 @@ const topicSummary = (snap, t, best) => {
     range_label: t.range_label,
     summary: t.summary,
     image_id: t.image_id,
-    icon: t.icon,
-    question_count: tests.reduce((s, x) => s + x.questions.length, 0),
+    icon: topicIcon(t),
+    question_count: tests.reduce((s, x) => s + servedCount(x), 0),
     test_count: tests.length,
     first_test_id: tests[0]?.id ?? null,
     ...topicProgress(tests, best),
@@ -101,7 +122,6 @@ export async function getTopic(slug, userId) {
     period_title: period.title,
     period_number: period.number,
     tests: tests.map((x) => testCard(x, best)),
-    materials: snap.materials.filter((m) => m.topic_id === topic.id),
     persons: snap.persons.filter((p) => p.topic_id === topic.id),
     prev: siblings[i - 1] ? { slug: siblings[i - 1].slug, title: siblings[i - 1].title } : null,
     next: siblings[i + 1] ? { slug: siblings[i + 1].slug, title: siblings[i + 1].title } : null,
@@ -120,6 +140,7 @@ export async function listTests(userId) {
           ...testCard(x, best),
           slug: t.slug,
           topic_title: t.title,
+          topic_icon: topicIcon(t),
           summary: t.summary,
           period_slug: p.slug,
           period_title: p.title,
@@ -131,36 +152,16 @@ export async function listTests(userId) {
   return out;
 }
 
-/** Reading list: every topic's summary, key facts and reading time, plus extra materials. */
-export async function listMaterials() {
+/** Topic index for the search box: titles, dates and key facts. */
+export async function topicIndex() {
   const snap = await published();
-  const materials = [];
+  const out = [];
   for (const p of snap.periods) {
     for (const t of snap.topics.filter((tt) => tt.period_id === p.id)) {
-      materials.push({
-        slug: t.slug,
-        title: t.title,
-        range_label: t.range_label,
-        summary: t.summary,
-        key_points: t.key_points,
-        read_minutes: readMinutes(t.body),
-        period_slug: p.slug,
-        period_title: p.title,
-        period_number: p.number,
-        extras: snap.materials.filter((m) => m.topic_id === t.id).map(({ body, ...m }) => ({ ...m, read_minutes: readMinutes(body) })),
-      });
+      out.push({ slug: t.slug, title: t.title, range_label: t.range_label, summary: t.summary, key_points: t.key_points, period_title: p.title });
     }
   }
-  const general = snap.materials.filter((m) => m.topic_id === null).map(({ body, ...m }) => ({ ...m, read_minutes: readMinutes(body) }));
-  return { materials, general };
-}
-
-export async function getMaterial(id) {
-  const snap = await published();
-  const m = snap.materials.find((x) => x.id === id);
-  if (!m) return null;
-  const topic = snap.topics.find((t) => t.id === m.topic_id) || null;
-  return { ...m, read_minutes: readMinutes(m.body), topic: topic && { slug: topic.slug, title: topic.title } };
+  return out;
 }
 
 export async function totals() {
@@ -169,6 +170,6 @@ export async function totals() {
     periods: snap.periods.length,
     topics: snap.topics.length,
     tests: snap.tests.length,
-    questions: snap.tests.reduce((s, x) => s + x.questions.length, 0),
+    questions: snap.tests.reduce((s, x) => s + servedCount(x), 0),
   };
 }

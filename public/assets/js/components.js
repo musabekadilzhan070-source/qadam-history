@@ -1,6 +1,6 @@
-import { esc, pad2 } from './util.js';
+import { esc, pad2, scoreBadge } from './util.js';
 import { icon, ornamentBand, ROMAN } from './art.js';
-import { site } from './site.js';
+import { site, renderIcon, fileUrl } from './site.js';
 
 /** Period card in the original QADAM style: dark field, red line art, big number, red button. */
 export function periodCard(p) {
@@ -56,3 +56,27 @@ export function periodChips(periods, active) {
 export const loading = () => '<div class="loading">Жүктелуде…</div>';
 
 export const errorBox = (message) => `<div class="panel error-box"><p>${esc(message)}</p><a class="btn btn-dark btn-sm" href="/" data-link>Басты бетке</a></div>`;
+
+/** A published test: topic emblem, description, size and time, and the student's best result. */
+export function testCard(t) {
+  return `
+    <article class="panel test-card">
+      ${t.cover_image_id ? `<img class="test-cover" src="${fileUrl(t.cover_image_id)}" alt="" loading="lazy" />` : ''}
+      <div class="top">
+        <span class="period-tag">${t.topic_icon ? renderIcon(t.topic_icon, null, 'icon test-emblem') : ''}<i>${pad2(t.period_number)}</i>${esc(t.period_title)}</span>
+        ${t.best_percent !== null ? scoreBadge(t.best_percent) : ''}
+      </div>
+      <h3>${esc(t.title)}</h3>
+      ${t.title !== t.topic_title ? `<p class="range">${esc(t.topic_title)}</p>` : ''}
+      <p>${esc(t.description || t.summary)}</p>
+      <div class="meta">
+        <span>${icon('tests')}${t.question_count} сұрақ</span>
+        ${t.time_limit_min ? `<span>${icon('clock')}${t.time_limit_min} мин</span>` : ''}
+        ${t.attempts ? `<span>${t.attempts} рет тапсырылды</span>` : '<span>Әлі тапсырылмаған</span>'}
+      </div>
+      <div class="actions">
+        <a class="btn btn-ghost btn-sm" href="/topics/${encodeURIComponent(t.slug)}" data-link>Оқу</a>
+        <a class="btn btn-sm" href="/tests/${t.id}" data-link>${t.attempts ? 'Қайта тапсыру' : 'Тестті бастау'}</a>
+      </div>
+    </article>`;
+}

@@ -36,26 +36,52 @@ function client() {
   };
 }
 
-test('overview counts come from the database', async () => {
+async function signedIn(email = `u${Math.random().toString(36).slice(2, 8)}@mail.kz`) {
   const call = client();
+  const reg = await call('POST', '/api/auth/register', { display_name: 'Оқушы', email, password: 'secret1', password_confirm: 'secret1' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  return call;
+}
+
+test('content needs a signed-in account', async () => {
+  const guest = client();
+  for (const path of ['/api/overview', '/api/periods/orta-gasyr', '/api/topics', '/api/topics/kazak-handygynyn-kuryluy', '/api/tests', '/api/tests/1']) {
+    assert.equal((await guest('GET', path)).status, 401, path);
+  }
+  assert.equal((await guest('GET', '/api/site')).status, 200);
+});
+
+test('overview counts come from the database', async () => {
+  const call = await signedIn();
   const { body } = await call('GET', '/api/overview');
   assert.equal(body.periods.length, 4);
   assert.deepEqual(body.periods.map((p) => p.title), ['Ежелгі заман', 'Орта ғасыр', 'Жаңа заман', 'Қазіргі заман']);
   const sum = body.periods.reduce((s, p) => s + p.question_count, 0);
   assert.equal(sum, body.totals.questions);
   for (const p of body.periods) assert.ok(p.topic_count > 0 && p.test_count > 0);
+  assert.ok(body.tests.length > 0);
 });
 
-test('period and topic pages resolve, unknown slugs 404', async () => {
-  const call = client();
+test('period and topic pages resolve, unknown slugs 404, every topic has an emblem', async () => {
+  const call = await signedIn();
   const period = await call('GET', '/api/periods/orta-gasyr');
   assert.equal(period.status, 200);
   assert.ok(period.body.topics.length > 0);
+  assert.ok(period.body.topics.every((t) => t.icon?.kind === 'emblem'));
   const topic = await call('GET', `/api/topics/${period.body.topics[0].slug}`);
   assert.equal(topic.status, 200);
   assert.ok(topic.body.body.length > 100);
+  assert.equal(topic.body.materials, undefined);
   assert.equal((await call('GET', '/api/periods/nope')).status, 404);
   assert.equal((await call('GET', '/api/topics/nope')).status, 404);
+  const index = await call('GET', '/api/topics');
+  assert.ok(index.body.topics.length >= 10);
+});
+
+test('materials are gone from the student API', async () => {
+  const call = await signedIn();
+  assert.equal((await call('GET', '/api/materials')).status, 404);
+  assert.equal((await call('GET', '/api/materials/1')).status, 404);
 });
 
 async function topicTestId(call) {
@@ -64,59 +90,89 @@ async function topicTestId(call) {
 }
 
 test('test questions never include correct answers', async () => {
-  const call = client();
+  const call = await signedIn();
   const id = await topicTestId(call);
   assert.ok(id);
   const { body } = await call('GET', `/api/tests/${id}`);
-  assert.equal(body.questions.length, 5);
-  assert.ok(body.questions.every((q) => q.multiple === false));
+  assert.equal(body.units.length, 5);
+  assert.equal(body.question_count, 5);
+  assert.ok(body.token);
+  assert.ok(body.units.every((q) => q.multiple === false));
   assert.doesNotMatch(JSON.stringify(body), /is_correct|correct_option/);
 });
 
-test('guest grading works but is not saved; signed-in attempts are saved and private', async () => {
-  const guest = client();
-  const id = await topicTestId(guest);
-  const { body: t } = await guest('GET', `/api/tests/${id}`);
-  const answers = Object.fromEntries(t.questions.map((q) => [q.id, q.options[0].id]));
-  const graded = await guest('POST', `/api/tests/${id}`, { answers, duration_sec: 42 });
+test('attempts are graded with a session token, saved and private', async () => {
+  const student = await signedIn('oqushy1@mail.kz');
+  const id = await topicTestId(student);
+  const { body: t } = await student('GET', `/api/tests/${id}`);
+  const answers = Object.fromEntries(t.units.map((q) => [q.id, q.options[0].id]));
+  assert.equal((await student('POST', `/api/tests/${id}`, { answers })).status, 400, 'no token');
+  assert.equal((await student('POST', `/api/tests/${id}`, { answers, token: t.token + 'x' })).status, 400, 'forged token');
+  const graded = await student('POST', `/api/tests/${id}`, { answers, token: t.token });
   assert.equal(graded.status, 200);
-  assert.equal(graded.body.saved, false);
   assert.equal(graded.body.total, 5);
   assert.equal(graded.body.items.length, 5);
 
   // Find the right answers from the review, then score 100%.
   const right = Object.fromEntries(graded.body.items.map((i) => [i.id, i.correct_option_ids]));
-  const student = client();
-  const reg = await student('POST', '/api/auth/register', { username: 'oqushy1', display_name: 'Оқушы Бір', password: 'secret1' });
-  assert.equal(reg.status, 201);
-  const full = await student('POST', `/api/tests/${id}`, { answers: right });
+  const { body: t2 } = await student('GET', `/api/tests/${id}`);
+  const full = await student('POST', `/api/tests/${id}`, { answers: right, token: t2.token });
   assert.equal(full.body.saved, true);
   assert.equal(full.body.percent, 100);
+  assert.equal(full.body.passed, true);
 
   const results = await student('GET', '/api/results');
-  assert.equal(results.body.summary.attempts, 1);
+  assert.equal(results.body.summary.attempts, 2);
   assert.equal(results.body.attempts[0].percent, 100);
   const detail = await student('GET', `/api/results/${full.body.attempt_id}`);
   assert.equal(detail.status, 200);
   assert.ok(detail.body.items.every((i) => i.is_correct));
 
-  const other = client();
-  await other('POST', '/api/auth/register', { username: 'oqushy2', display_name: 'Оқушы Екі', password: 'secret2' });
+  const other = await signedIn('oqushy2@mail.kz');
   assert.equal((await other('GET', `/api/results/${full.body.attempt_id}`)).status, 404);
-  assert.equal((await guest('GET', '/api/results')).status, 401);
+  assert.equal((await client()('GET', '/api/results')).status, 401);
 });
 
-test('login, profile update, password change and logout', async () => {
+test('registration checks email, passwords and duplicates', async () => {
   const call = client();
-  await call('POST', '/api/auth/register', { username: 'oqushy3', display_name: 'Оқушы Үш', password: 'secret3' });
-  assert.equal((await call('POST', '/api/auth/register', { username: 'OQUSHY3', display_name: 'Х', password: 'secret3' })).status, 400);
+  const reg = (b) => call('POST', '/api/auth/register', { display_name: 'Әділ Жан', password: 'secret1', password_confirm: 'secret1', ...b });
+  assert.match((await reg({ email: 'adil@gmail' })).body.error, /форматы қате/);
+  assert.match((await reg({ email: 'adil@gmail.com', password_confirm: 'other11' })).body.error, /сәйкес келмейді/);
+  assert.match((await reg({ email: 'adil@gmail.com', password: '123', password_confirm: '123' })).body.error, /кемінде 6/);
+  assert.match((await reg({ email: 'adil@gmail.com', display_name: 'A' })).body.error, /Аты-жөніңізді/);
+  assert.equal((await reg({ email: 'Adil@Gmail.com' })).status, 201);
+  assert.equal((await client()('POST', '/api/auth/register', { display_name: 'Басқа', email: 'adil@gmail.com', password: 'secret1', password_confirm: 'secret1' })).status, 409);
+});
+
+test('login with email or login, profile update, password change and logout', async () => {
+  const call = client();
+  await call('POST', '/api/auth/register', { email: 'oqushy3@mail.kz', display_name: 'Оқушы Үш', password: 'secret3', password_confirm: 'secret3' });
   assert.equal((await call('PATCH', '/api/me', { display_name: 'Жаңа Есім' })).body.user.display_name, 'Жаңа Есім');
   assert.equal((await call('POST', '/api/me/password', { current_password: 'wrong', new_password: 'newpass1' })).status, 400);
   assert.equal((await call('POST', '/api/me/password', { current_password: 'secret3', new_password: 'newpass1' })).status, 200);
   await call('POST', '/api/auth/logout');
   assert.equal((await call('GET', '/api/me')).body.user, null);
-  assert.equal((await call('POST', '/api/auth/login', { username: 'oqushy3', password: 'secret3' })).status, 401);
-  assert.equal((await call('POST', '/api/auth/login', { username: 'oqushy3', password: 'newpass1' })).status, 200);
+  assert.equal((await call('POST', '/api/auth/login', { login: 'oqushy3@mail.kz', password: 'secret3' })).status, 401);
+  assert.match((await call('POST', '/api/auth/login', { login: 'oqushy3@mail', password: 'newpass1' })).body.error, /форматы қате/);
+  const ok = await call('POST', '/api/auth/login', { login: 'OQUSHY3@mail.kz', password: 'newpass1' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.user.email, 'oqushy3@mail.kz');
+});
+
+test('older accounts with a plain login still sign in', async () => {
+  const call = client();
+  assert.equal((await call('POST', '/api/auth/register', { username: 'eski_login', display_name: 'Ескі Аккаунт', password: 'secret4' })).status, 201);
+  await call('POST', '/api/auth/logout');
+  assert.equal((await call('POST', '/api/auth/login', { username: 'eski_login', password: 'secret4' })).status, 200);
+});
+
+test('password reset by email answers clearly when mail is not set up', async () => {
+  const call = client();
+  assert.equal((await call('GET', '/api/auth/options')).body.email_reset, false);
+  const res = await call('POST', '/api/auth/forgot', { email: 'oqushy1@mail.kz' });
+  assert.equal(res.status, 503);
+  assert.match(res.body.error, /организатор/);
+  assert.equal((await call('POST', '/api/auth/reset', { token: 'nope', password: 'secret9', password_confirm: 'secret9' })).status, 400);
 });
 
 test('state-changing requests need the CSRF header', async () => {
@@ -125,7 +181,7 @@ test('state-changing requests need the CSRF header', async () => {
 });
 
 test('removed game routes do not exist', async () => {
-  const call = client();
+  const call = await signedIn();
   for (const path of ['/api/live', '/api/games', '/api/timeline', '/api/map']) {
     assert.equal((await call('GET', path)).status, 404);
   }

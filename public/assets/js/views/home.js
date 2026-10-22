@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { esc, pad2, scoreBadge, formatDate } from '../util.js';
 import { icon, bannerArt, ornamentBand, ornamentMark } from '../art.js';
-import { periodCard } from '../components.js';
+import { periodCard, testCard } from '../components.js';
 import { site, fileUrl } from '../site.js';
 
 function progressPanel(user, periods, results) {
@@ -74,7 +74,9 @@ export async function homeView(el, _params, app, alive) {
     app.user ? api.get('/api/results').catch(() => null) : null,
   ]);
   if (!alive()) return;
-  const { periods, totals } = overview;
+  const { periods, totals, tests } = overview;
+  // Newest tests first: the organizer's latest published tests show up here.
+  const latest = [...tests].sort((a, b) => b.id - a.id).slice(0, 3);
   el.innerHTML = `
   <div class="home">
     <div class="home-main">
@@ -99,6 +101,21 @@ export async function homeView(el, _params, app, alive) {
         </div>
         <div class="period-grid">${periods.map(periodCard).join('')}</div>
       </section>
+
+      ${
+        latest.length
+          ? `<section class="section" aria-labelledby="tests-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Білімді тексер</p>
+            <h2 class="section-title" id="tests-title">Жаңа тесттер</h2>
+          </div>
+          <a class="link-more" href="/tests" data-link>Барлық тесттер ${icon('arrow')}</a>
+        </div>
+        <div class="card-grid">${latest.map(testCard).join('')}</div>
+      </section>`
+          : ''
+      }
 
       <section class="section" aria-labelledby="how-title">
         <div class="section-head">

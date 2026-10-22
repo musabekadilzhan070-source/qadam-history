@@ -7,18 +7,15 @@ import { homeView } from './views/home.js';
 import { periodsView, periodView } from './views/periods.js';
 import { topicView } from './views/topic.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
-import { materialView } from './views/material.js';
 import { testsView } from './views/tests.js';
-import { materialsView } from './views/materials.js';
 import { resultsView, attemptView } from './views/results.js';
 import { profileView } from './views/profile.js';
-import { loginView, registerView } from './views/auth.js';
+import { welcomeView, loginView, registerView, forgotView, resetView } from './views/auth.js';
 
 const NAV = [
   { key: 'home', href: '/', label: 'Басты бет', short: 'Басты', icon: 'home' },
   { key: 'periods', href: '/periods', label: 'Тарихи кезеңдер', short: 'Кезеңдер', icon: 'periods' },
   { key: 'tests', href: '/tests', label: 'Тесттер', short: 'Тесттер', icon: 'tests' },
-  { key: 'materials', href: '/materials', label: 'Материалдар', short: 'Материал', icon: 'materials' },
   { key: 'results', href: '/results', label: 'Менің нәтижелерім', short: 'Нәтиже', icon: 'results' },
   { key: 'profile', href: '/profile', label: 'Профиль', short: 'Профиль', icon: 'profile' },
 ];
@@ -31,14 +28,19 @@ const ROUTES = [
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
   { re: /^\/topics\/([\w-]+)\/?$/, nav: 'periods', view: topicView },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
-  { re: /^\/materials\/?$/, nav: 'materials', view: materialsView, title: 'Материалдар' },
-  { re: /^\/materials\/(\d+)\/?$/, nav: 'materials', view: materialView },
-  { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім', auth: true },
-  { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі', auth: true },
-  { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль', auth: true },
-  { re: /^\/login\/?$/, nav: 'profile', view: loginView, title: 'Кіру' },
-  { re: /^\/register\/?$/, nav: 'profile', view: registerView, title: 'Тіркелу' },
+  { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім' },
+  { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі' },
+  { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль' },
+  // Pages open to guests; everything else needs an account.
+  { re: /^\/welcome\/?$/, view: welcomeView, title: 'Кіру немесе тіркелу', guest: true },
+  { re: /^\/login\/?$/, view: loginView, title: 'Кіру', guest: true },
+  { re: /^\/register\/?$/, view: registerView, title: 'Тіркелу', guest: true },
+  { re: /^\/forgot\/?$/, view: forgotView, title: 'Құпиясөзді қалпына келтіру', guest: true },
+  { re: /^\/reset\/?$/, view: resetView, title: 'Жаңа құпиясөз', guest: true },
 ];
+
+// Old material links have no page any more: send them to the topics.
+const MOVED = [[/^\/materials(\/.*)?$/, '/periods']];
 
 const view = document.getElementById('view');
 let cleanup = null;
@@ -56,6 +58,7 @@ export const app = {
   },
   setUser(user) {
     app.user = user;
+    searchIndex = null;
     renderUserSlot();
   },
   /** Called by views that hold unsaved work (a running test) to confirm leaving. */
@@ -80,8 +83,8 @@ function renderUserSlot() {
   slot.innerHTML = u
     ? `<a class="user-chip" href="/profile" data-link aria-label="Профиль: ${esc(u.display_name)}">
          <span class="avatar">${esc(initials(u.display_name))}</span>
-         <span class="user-text">${esc(u.display_name)}<small>@${esc(u.username)}</small></span></a>`
-    : `<a class="btn btn-dark btn-sm" href="/login" data-link>Кіру</a>`;
+         <span class="user-text">${esc(u.display_name)}<small>${esc(u.email || '@' + u.username)}</small></span></a>`
+    : '';
 }
 
 async function render() {
@@ -92,7 +95,14 @@ async function render() {
   }
   app.guard = null;
   const path = location.pathname;
+  const moved = MOVED.find(([re]) => re.test(path));
+  if (moved) return app.navigate(moved[1], { replace: true });
   const route = ROUTES.find((r) => r.re.test(path));
+  if (!app.user && !route?.guest) {
+    const next = path === '/' ? '' : `?next=${encodeURIComponent(path + location.search)}`;
+    return app.navigate(`/welcome${next}`, { replace: true });
+  }
+  document.body.classList.toggle('is-guest', !app.user);
   renderNav(route?.nav);
   closeSearch();
   window.scrollTo(0, 0);
@@ -102,10 +112,6 @@ async function render() {
     return;
   }
   if (route.title !== undefined) app.setTitle(route.title);
-  if (route.auth && !app.user) {
-    app.navigate(`/login?next=${encodeURIComponent(path)}`, { replace: true });
-    return;
-  }
   view.innerHTML = loading();
   try {
     const params = path.match(route.re).slice(1).map(decodeURIComponent);
@@ -115,7 +121,7 @@ async function render() {
     if (token !== renderToken) return;
     if (err.status === 401) {
       app.setUser(null);
-      app.navigate(`/login?next=${encodeURIComponent(path)}`, { replace: true });
+      app.navigate(`/welcome?next=${encodeURIComponent(path)}`, { replace: true });
       return;
     }
     view.innerHTML = errorBox(err.message || 'Қате шықты.');
@@ -132,6 +138,7 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   if (app.guard && !app.guard()) return;
   if (url.pathname + url.search === location.pathname + location.search) {
+    if ('reload' in a.dataset) return render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
@@ -150,8 +157,8 @@ function closeSearch() {
 
 async function loadIndex() {
   if (searchIndex) return searchIndex;
-  const { materials } = await api.get('/api/materials');
-  searchIndex = materials.map((m) => ({
+  const { topics } = await api.get('/api/topics');
+  searchIndex = topics.map((m) => ({
     ...m,
     haystack: [m.title, m.summary, m.range_label, m.period_title, ...m.key_points.flatMap((k) => [k.label, k.text])]
       .join(' ')
