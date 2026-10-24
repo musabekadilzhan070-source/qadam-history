@@ -156,7 +156,7 @@ export function topicEditView(el, [id], ctx) {
         ${input({ name: 'slug', label: 'Сілтеме (URL)', value: t.slug, max: 60, hint: 'Бос қалдырсаңыз, атауынан жасалады. Өзгертсеңіз, ескі сілтеме жұмыс істемейді.' })}
       </div>
       ${textarea({ name: 'summary', label: 'Қысқаша сипаттама', value: t.summary, rows: 3, max: 600 })}
-      ${textarea({ name: 'body', label: 'Оқу материалы', value: t.body, rows: 14, hint: '«## » деп басталған жол — бөлім атауы, «- » деп басталған жол — тізім. Абзацтарды бос жолмен бөліңіз.' })}
+      ${textarea({ name: 'body', label: 'Тақырып мәтіні', value: t.body, rows: 14, hint: '«## » деп басталған жол — бөлім атауы, «- » деп басталған жол — тізім. Абзацтарды бос жолмен бөліңіз.' })}
       <div class="o-field"><span class="o-label">Есте сақтайтын деректер</span>
         <ul class="o-kps" id="kps">${t.key_points.map(keyPointRow).join('')}</ul>
         <button type="button" class="btn btn-ghost btn-sm" id="kp-add">+ Дерек қосу</button>

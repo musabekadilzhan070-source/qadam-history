@@ -5,6 +5,7 @@ import { dashboardView } from './dashboard.js';
 import { topicsView, topicEditView } from './topics.js';
 import { emblemsView } from './emblems.js';
 import { studentsView } from './students.js';
+import { feedbackView } from './feedback.js';
 import { testsView, testEditView } from './tests.js';
 import { imagesView } from './images.js';
 import { iconsView } from './icons.js';
@@ -24,6 +25,7 @@ const ROUTES = [
   { re: /^\/organizer\/images\/?$/, nav: 'images', view: imagesView, title: 'Суреттер' },
   { re: /^\/organizer\/emblems\/?$/, nav: 'emblems', view: emblemsView, title: 'Эмблемалар кітапханасы' },
   { re: /^\/organizer\/students\/?$/, nav: 'students', view: studentsView, title: 'Оқушылар' },
+  { re: /^\/organizer\/feedback\/?$/, nav: 'feedback', view: feedbackView, title: 'Келген ұсыныстар' },
   { re: /^\/organizer\/icons\/?$/, nav: 'icons', view: iconsView, title: 'Белгішелер' },
   { re: /^\/organizer\/persons\/?$/, nav: 'persons', view: personsView, title: 'Хандар мен тұлғалар' },
   { re: /^\/organizer\/persons\/(new|\d+)\/?$/, nav: 'persons', view: personEditView, title: 'Тұлға' },
@@ -40,7 +42,16 @@ const ctx = {
   async reload() {
     ctx.state = await org.get('/state');
     paintStatus();
+    paintFeedback(ctx.state.feedback_new);
     return ctx.state;
+  },
+  /** Re-reads the number of unread suggestions for the menu badge. */
+  async refreshFeedback() {
+    try {
+      paintFeedback((await org.get('/feedback/count')).new);
+    } catch {
+      /* the next tick shows it */
+    }
   },
   navigate(href, { replace = false, force = false } = {}) {
     if (!force && !leaveOk()) return;
@@ -113,6 +124,7 @@ function loginView(message = '') {
 
 setUnauthorizedHandler(() => {
   dirtyCheck = null;
+  clearInterval(feedbackTimer);
   loginView('Сессия аяқталды. PIN-кодты қайта енгізіңіз.');
 });
 
@@ -146,12 +158,22 @@ function layout() {
     if (!leaveOk()) return;
     if (!(await confirmDialog('Кабинеттен шығу', 'Кабинеттен шығасыз ба? Қайта кіру үшін PIN-код қажет болады.', { ok: 'Шығу' }))) return;
     await org.post('/logout').catch(() => {});
+    clearInterval(feedbackTimer);
     dirtyCheck = null;
     history.replaceState(null, '', '/organizer');
     loginView();
   });
   root.querySelector('#publish-btn').addEventListener('click', () => publish());
 }
+
+function paintFeedback(n) {
+  const a = document.querySelector('#o-nav a[data-key="feedback"]');
+  if (!a) return;
+  a.querySelector('.o-nav-dot')?.remove();
+  if (n) a.insertAdjacentHTML('beforeend', `<i class="o-nav-dot" aria-label="${n} жаңа ұсыныс">${n}</i>`);
+}
+
+let feedbackTimer = null;
 
 function paintStatus() {
   const el = document.getElementById('o-status');
@@ -245,6 +267,8 @@ window.addEventListener('popstate', () => {
 
 async function start() {
   layout();
+  clearInterval(feedbackTimer);
+  feedbackTimer = setInterval(() => document.hidden || ctx.refreshFeedback(), 30000);
   await render();
 }
 

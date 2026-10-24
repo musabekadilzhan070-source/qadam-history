@@ -5,7 +5,7 @@ import { esc, icon, toast, dialog, confirmDialog, fileSrc, formatBytes, pickFile
 
 // Built-in library: the site's own line icons and the four period emblems (same list as the server).
 export const BUILTIN = [
-  ['home', 'Үй'], ['periods', 'Ғимарат'], ['tests', 'Тест'], ['materials', 'Кітап'], ['results', 'Диаграмма'], ['profile', 'Адам'],
+  ['home', 'Үй'], ['periods', 'Ғимарат'], ['tests', 'Тест'], ['materials', 'Кітап'], ['results', 'Диаграмма'], ['feedback', 'Хат'], ['profile', 'Адам'],
   ['book', 'Дәптер'], ['clock', 'Сағат'], ['search', 'Іздеу'], ['check', 'Белгі'], ['arrow', 'Көрсеткі'], ['logout', 'Шығу'],
   ['emblem-1', 'Қорған мен күн'], ['emblem-2', 'Кесене'], ['emblem-3', 'Қолжазба'], ['emblem-4', 'Бәйтерек'],
 ];
@@ -16,6 +16,8 @@ const preview = (value, fallback) => renderIcon(value, fallback, 'icon o-icon-pr
 export function chooseIcon(ctx, current) {
   const files = () => ctx.state.files.filter((f) => f.kind === 'icon' || f.kind === 'image');
   const body = () => `
+    <h3 class="o-sub">Қазақстан тарихы эмблемалары <button type="button" class="btn btn-dark btn-sm" data-emblems>Кітапхананы ашу (128 эмблема)</button></h3>
+    ${current?.kind === 'emblem' ? `<p class="o-muted">Қазір таңдалғаны: ${renderIcon(current, null, 'icon')}</p>` : ''}
     <h3 class="o-sub">Дайын белгішелер</h3>
     <div class="o-icon-grid">${BUILTIN.map(
       ([name, label]) => `<button type="button" class="o-icon-choice${current?.kind === 'builtin' && current.name === name ? ' is-on' : ''}" data-name="${name}">${renderIcon({ kind: 'builtin', name }, null, 'icon')}<span>${esc(label)}</span></button>`,
@@ -37,6 +39,10 @@ export function chooseIcon(ctx, current) {
         const b = e.target.closest('.o-icon-choice');
         if (b?.dataset.name) return close({ kind: 'builtin', name: b.dataset.name, size: current?.size || 22 });
         if (b?.dataset.id) return close({ kind: 'file', id: Number(b.dataset.id), size: current?.size || 22 });
+        if (e.target.closest('[data-emblems]')) {
+          const v = await chooseEmblem(ctx, current?.kind === 'emblem' ? current : null);
+          if (v) close({ ...v, size: current?.size || v.size || 22 });
+        }
         if (e.target.closest('[data-up]')) {
           const [created] = await uploadFiles('icon', await pickFiles('icon'), ctx);
           if (created) close({ kind: 'file', id: created.id, size: current?.size || 22 });

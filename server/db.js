@@ -179,6 +179,22 @@ CREATE TABLE IF NOT EXISTS emblems (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Suggestions and feedback from students to the organizer. Not content: never published or restored.
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  reply TEXT,
+  replied_at TEXT,
+  read_at TEXT,
+  reply_seen INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status, id);
+
 CREATE INDEX IF NOT EXISTS idx_tests_topic ON tests(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_materials_topic ON materials(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_persons_topic ON persons(topic_id, position);

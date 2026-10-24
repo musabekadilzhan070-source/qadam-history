@@ -7,6 +7,7 @@ export const SECTIONS = [
   { key: 'icons', href: '/organizer/icons', label: 'Белгішелер', icon: 'check' },
   { key: 'persons', href: '/organizer/persons', label: 'Хандар мен тұлғалар', icon: 'profile' },
   { key: 'students', href: '/organizer/students', label: 'Оқушылар', icon: 'profile' },
+  { key: 'feedback', href: '/organizer/feedback', label: 'Келген ұсыныстар', icon: 'feedback' },
   { key: 'site', href: '/organizer/site', label: 'Сайт мазмұны', icon: 'home' },
   { key: 'publish', href: '/organizer/publish', label: 'Сақтау және жариялау', icon: 'results' },
 ];

@@ -8,6 +8,9 @@ import { TYPES, CHOICE_TYPES, settingsOf, dataOf, assembleQuestions, testProblem
 import { studentPaper } from './quiz.js';
 import { hashPassword, endAllSessions } from './auth.js';
 import { EMBLEM_IDS, EMBLEM_CATEGORIES } from '../public/assets/js/emblems.js';
+import { readSpreadsheet } from './sheets.js';
+import { orgFeedbackRouter } from './feedback.js';
+import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -93,16 +96,18 @@ const TRANSLIT = {
   һ: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'y', і: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya',
 };
 
+const latin = (title) =>
+  String(title)
+    .toLowerCase()
+    .split('')
+    .map((c) => TRANSLIT[c] ?? c)
+    .join('')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+
 async function uniqueSlug(title, exceptId = null) {
-  const base =
-    String(title)
-      .toLowerCase()
-      .split('')
-      .map((c) => TRANSLIT[c] ?? c)
-      .join('')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'takyryp';
+  const base = latin(title) || 'takyryp';
   let slug = base;
   for (let i = 2; await get('SELECT 1 AS ok FROM topics WHERE slug = ? AND id IS NOT ?', slug, exceptId); i += 1) slug = `${base}-${i}`;
   return slug;
@@ -140,7 +145,7 @@ function parseKeyPoints(list) {
     .slice(0, 40);
 }
 
-const ICON_NAMES = ['home', 'periods', 'tests', 'materials', 'results', 'profile', 'book', 'clock', 'search', 'check', 'arrow', 'logout'];
+const ICON_NAMES = ['home', 'periods', 'tests', 'materials', 'results', 'feedback', 'profile', 'book', 'clock', 'search', 'check', 'arrow', 'logout'];
 const EMBLEM_NAMES = ['emblem-1', 'emblem-2', 'emblem-3', 'emblem-4'];
 
 async function parseIcon(v) {
@@ -243,6 +248,7 @@ async function state() {
       (f) => ({ ...f, used_by: uses.get(f.id) || [] }),
     ),
     emblems: await all('SELECT e.id, e.name, e.category, e.file_id, f.version FROM emblems e JOIN files f ON f.id = e.file_id ORDER BY e.id DESC'),
+    feedback_new: (await get("SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'")).n,
     texts: await readSetting('texts', {}),
     icons: await readSetting('icons', {}),
     status: await draftStatus(),
@@ -780,6 +786,156 @@ orgRouter.delete(
   }),
 );
 
+// ─── Suggestions from students (feedback.js) ─────────────────────
+orgRouter.use('/feedback', orgFeedbackRouter);
+
+// ─── Question import and export (layout in transfer.js) ───────────
+const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+// File names are in Latin letters: some browsers and phones drop a Kazakh file name and save "download".
+function sendSheet(res, buf, format, name) {
+  res.set('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : XLSX_MIME);
+  res.set('Content-Disposition', `attachment; filename="${latin(name) || 'qadam'}.${format}"`);
+  res.set('Cache-Control', 'no-store');
+  res.send(buf);
+}
+
+orgRouter.get(
+  '/tests/:id/export',
+  wrap(async (req, res) => {
+    const test = await testDetail(Number(req.params.id));
+    if (!test) return res.status(404).json({ error: 'Тест табылмады.' });
+    const format = req.query.format === 'csv' ? 'csv' : 'xlsx';
+    sendSheet(res, exportFile(test.questions, format, test.title), format, `qadam ${test.title} suraqtar`);
+  }),
+);
+
+orgRouter.get(
+  '/import/template',
+  wrap(async (_req, res) => {
+    sendSheet(res, templateFile(), 'xlsx', 'qadam suraqtar ulgisi');
+  }),
+);
+
+/** Where each question text already is: duplicate key → [{ id, title }] of draft tests. */
+async function questionIndex() {
+  const index = new Map();
+  for (const t of await draftTests()) {
+    for (const q of t.questions.flatMap((x) => (x.type === 'context' ? [x, ...x.children] : [x]))) {
+      const key = duplicateKey(q);
+      if (!index.has(key)) index.set(key, []);
+      if (!index.get(key).some((x) => x.id === t.id)) index.get(key).push({ id: t.id, title: t.title });
+    }
+  }
+  return index;
+}
+
+const flat = (questions) => questions.flatMap((q) => (q.type === 'context' ? [q, ...q.children] : [q]));
+
+/** Reads an uploaded file and returns what would be imported. Nothing is saved here. */
+orgRouter.post(
+  '/import/parse',
+  rawBody,
+  wrap(async (req, res) => {
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!buf.length) fail('Файл таңдалмады немесе бос.');
+    let sheet;
+    try {
+      sheet = readSpreadsheet(buf);
+    } catch (err) {
+      fail(err.message);
+    }
+    const { questions, errors, warnings, images = [] } = rowsToQuestions(sheet.rows);
+    const known = new Set(
+      images.length ? (await all(`SELECT id FROM files WHERE kind = 'image' AND id IN (${images.map(Number).join(',')})`)).map((r) => r.id) : [],
+    );
+    dropMissingImages(questions, known, warnings);
+    // A picture question whose picture is missing cannot be shown to students.
+    const usable = [];
+    for (const q of questions) {
+      const lost = flat([q]).find((x) => x.type === 'image' && !x.image_id);
+      if (lost) errors.push({ row: lost.row, message: 'Суретпен берілетін сұрақтың суреті табылмады: «Сурет» бағанына кабинеттегі суреттің ID нөмірін жазыңыз.' });
+      else usable.push(q);
+    }
+    errors.sort((a, b) => a.row - b.row);
+    const index = await questionIndex();
+    const seen = new Map();
+    for (const q of flat(usable)) {
+      const key = duplicateKey(q);
+      q.duplicate = { tests: index.get(key) || [], row: seen.get(key) || null };
+      if (!seen.has(key)) seen.set(key, q.row);
+    }
+    res.json({ format: sheet.format, questions: usable, count: flat(usable).filter((q) => q.type !== 'context').length, errors, warnings });
+  }),
+);
+
+/** Saves checked questions into an existing test (appended) or a new one, in one write. */
+orgRouter.post(
+  '/import/commit',
+  wrap(async (req, res) => {
+    const body = req.body || {};
+    const incoming = Array.isArray(body.questions) ? body.questions : [];
+    if (!incoming.length) fail('Импорттайтын сұрақ жоқ.');
+    const skip = Boolean(body.skip_duplicates);
+    let base;
+    if (body.target === 'existing') {
+      const id = Number(body.test_id);
+      base = await testDetail(id);
+      if (!base) fail('Таңдалған тест табылмады.');
+      if (!base.topic_id) fail('Бұл тест тақырыпқа байланыстырылмаған: алдымен тестке тақырып таңдаңыз.');
+    } else if (body.target === 'new') {
+      base = { id: null, topic_id: optId(body.topic_id), title: body.title, description: '', cover_image_id: null, settings: {}, questions: [] };
+    } else fail('Сұрақтарды қайда қосатыныңызды таңдаңыз.');
+
+    // Duplicates are dropped against the target test and earlier rows of the same file.
+    const keys = new Set(flat(base.questions).map(duplicateKey));
+    const strip = (q) => ({ ...q, id: null, options: (q.options || []).map((o) => ({ ...o, id: null })), children: q.children?.map(strip) });
+    let skipped = 0;
+    const added = [];
+    for (const raw of incoming) {
+      const q = strip(raw);
+      if (q.type === 'context') {
+        q.children = (q.children || []).filter((c) => {
+          const dup = keys.has(duplicateKey(c));
+          keys.add(duplicateKey(c));
+          if (dup && skip) skipped += 1;
+          return !(dup && skip);
+        });
+        if (!q.children.length) continue;
+      } else {
+        const dup = keys.has(duplicateKey(q));
+        keys.add(duplicateKey(q));
+        if (dup && skip) {
+          skipped += 1;
+          continue;
+        }
+      }
+      added.push(q);
+    }
+    if (!added.length) fail('Барлық сұрақ қайталанады: қосылатын жаңа сұрақ қалмады.');
+    if (base.questions.length + added.length > 200) {
+      fail(`Бір тестте ең көбі 200 сұрақ (блок) болады: тестте ${base.questions.length}, импортта ${added.length}.`);
+    }
+    // parseTest checks every field and picture again, so a hand-made request cannot store bad data.
+    const test = await parseTest({ ...base, questions: [...base.questions, ...added] });
+    const count = gradable(test.questions.slice(base.questions.length)).length;
+    let id = base.id;
+    if (id) await writeTest(id, test);
+    else {
+      const position = await nextPosition('tests', 'WHERE topic_id = ?', test.topic_id);
+      id = Number((await run('INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, 0)', test.topic_id, position, test.title)).lastInsertRowid);
+      try {
+        await writeTest(id, test);
+      } catch (err) {
+        await run('DELETE FROM tests WHERE id = ?', id);
+        throw err;
+      }
+    }
+    res.status(201).json({ test_id: id, added: count, skipped, test: await testDetail(id) });
+  }),
+);
+
 // ─── Emblem library: the organizer's own uploads (the built-in set is in emblems.js) ───
 const CATEGORY_KEYS = EMBLEM_CATEGORIES.map(([k]) => k);
 const emblemFields = (body) => {
@@ -849,7 +1005,6 @@ orgRouter.post(
 );
 
 // ─── Files ────────────────────────────────────────────────────────
-const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });
 
 function uploadName(req) {
   try {

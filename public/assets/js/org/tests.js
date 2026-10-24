@@ -3,6 +3,7 @@ import { letter } from '../quiz-player.js';
 import { runQuiz } from '../views/quiz.js';
 import { resultHero, reviewList } from '../views/review.js';
 import { TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
+import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
 // Test builder: settings, seven question formats, checks before publishing and a student preview.
@@ -160,7 +161,9 @@ export function testsView(el, _params, ctx) {
       .map((g) => ({ ...g, tests: s.tests.filter((x) => x.topic_id === g.id) }))
       .filter((g) => g.tests.length || g.id !== null);
     el.innerHTML = `
-      <div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа тест құру</button></div>
+      <div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа тест құру</button>
+        <button type="button" class="btn btn-dark" data-import>Сұрақтарды импорттау</button>
+        <a class="btn btn-ghost" href="${TEMPLATE_URL}" download>Excel үлгісі</a></div>
       ${groups
         .map(
           (g) => `<section class="o-card o-card-tight">
@@ -182,6 +185,7 @@ export function testsView(el, _params, ctx) {
                         <div class="o-row-actions">
                           <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
                           <button type="button" class="btn btn-ghost btn-sm" data-act="duplicate">Көшірме</button>
+                          ${exportButtons(x.id)}
                           <button type="button" class="btn btn-ghost btn-sm" data-act="toggle">${x.live ? 'Жасыру' : 'Жариялау'}</button>
                           <button type="button" class="o-icon-btn o-danger" data-act="delete" aria-label="Жою" title="Жою">${icon('cross')}</button>
                         </div>
@@ -197,6 +201,14 @@ export function testsView(el, _params, ctx) {
   el.addEventListener('click', async (e) => {
     const nb = e.target.closest('[data-new]');
     if (nb) return createTest(ctx, nb.dataset.new || '');
+    if (e.target.closest('[data-import]')) {
+      const id = await importQuestions(ctx);
+      if (id) {
+        await ctx.reload();
+        draw();
+      }
+      return;
+    }
     const row = e.target.closest('.o-row');
     const btn = e.target.closest('[data-act]');
     if (!row || !btn) return;
@@ -505,6 +517,8 @@ export async function testEditView(el, [id], ctx, alive) {
             ${STATE_BADGE[test.live_state]}
             <button type="button" class="btn btn-ghost btn-sm" data-act="preview">Оқушы ретінде қарау</button>
             <button type="button" class="btn btn-ghost btn-sm" data-act="duplicate">Көшірме жасау</button>
+            ${exportButtons(test.id)}
+            <button type="button" class="btn btn-ghost btn-sm" data-act="import">Сұрақтарды импорттау</button>
             ${test.live_state !== 'hidden' ? '<button type="button" class="btn btn-ghost btn-sm" data-act="hide">Жасыру</button>' : ''}
             <button type="button" class="btn btn-ghost btn-sm o-danger" data-act="delete">Жою</button>
             <button type="button" class="btn btn-sm" data-act="publish">${test.live_state === 'changed' ? 'Өзгерістерді жариялау' : 'Жариялау'}</button>
@@ -640,10 +654,27 @@ export async function testEditView(el, [id], ctx, alive) {
   }
 
   el.addEventListener('click', async (e) => {
+    // The file is made from the saved test, so unsaved edits are saved first.
+    const link = e.target.closest('[data-export]');
+    if (link && dirty) {
+      e.preventDefault();
+      if (await save({ quiet: true })) window.location.href = link.href;
+      return;
+    }
     const btn = e.target.closest('button');
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === 'save') return save();
+    if (act === 'import') {
+      if (dirty && !(await save({ quiet: true }))) return;
+      const target = await importQuestions(ctx, { testId: test.id });
+      if (!target) return;
+      await ctx.reload();
+      if (target !== test.id) return ctx.navigate(`/organizer/tests/${target}`, { force: true });
+      test = await org.get(`/tests/${test.id}`);
+      redraw();
+      return;
+    }
     if (act === 'preview') return preview(test);
     if (act === 'publish') {
       if (dirty && !(await save({ quiet: true }))) return;

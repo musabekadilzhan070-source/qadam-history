@@ -10,6 +10,7 @@ import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
 import { resultsView, attemptView } from './views/results.js';
 import { profileView } from './views/profile.js';
+import { feedbackView } from './views/feedback.js';
 import { welcomeView, loginView, registerView, forgotView, resetView } from './views/auth.js';
 
 const NAV = [
@@ -17,6 +18,7 @@ const NAV = [
   { key: 'periods', href: '/periods', label: 'Тарихи кезеңдер', short: 'Кезеңдер', icon: 'periods' },
   { key: 'tests', href: '/tests', label: 'Тесттер', short: 'Тесттер', icon: 'tests' },
   { key: 'results', href: '/results', label: 'Менің нәтижелерім', short: 'Нәтиже', icon: 'results' },
+  { key: 'feedback', href: '/feedback', label: 'Ұсыныстар', short: 'Ұсыныс', icon: 'feedback' },
   { key: 'profile', href: '/profile', label: 'Профиль', short: 'Профиль', icon: 'profile' },
 ];
 
@@ -31,6 +33,7 @@ const ROUTES = [
   { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім' },
   { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі' },
   { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль' },
+  { re: /^\/feedback\/?$/, nav: 'feedback', view: feedbackView, title: 'Ұсыныстар' },
   // Pages open to guests; everything else needs an account.
   { re: /^\/welcome\/?$/, view: welcomeView, title: 'Кіру немесе тіркелу', guest: true },
   { re: /^\/login\/?$/, view: loginView, title: 'Кіру', guest: true },
@@ -60,20 +63,42 @@ export const app = {
     app.user = user;
     searchIndex = null;
     renderUserSlot();
+    unseenReplies = 0;
+    clearInterval(badgeTimer);
+    if (user) {
+      app.refreshBadges();
+      badgeTimer = setInterval(() => document.hidden || app.refreshBadges(), 60000);
+    }
   },
   /** Called by views that hold unsaved work (a running test) to confirm leaving. */
   guard: null,
+  /** Re-reads the count of organizer replies the student has not seen yet (the dot on «Ұсыныстар»). */
+  async refreshBadges() {
+    if (!app.user) return;
+    try {
+      unseenReplies = (await api.get('/api/feedback/unseen')).unseen;
+    } catch {
+      return;
+    }
+    renderNav(activeNav);
+  },
 };
 
+let unseenReplies = 0;
+let activeNav = null;
+let badgeTimer = null;
+
 function renderNav(active) {
+  activeNav = active;
   // Labels and icons can be changed by the organizer; the defaults are the original ones.
   const label = (n) => site.t(`nav_${n.key}`);
   const short = (n) => (site.texts[`nav_${n.key}`] ? label(n) : n.short);
+  const dot = (n) => (n.key === 'feedback' && unseenReplies ? `<i class="nav-dot" aria-label="${unseenReplies} жаңа жауап">${unseenReplies}</i>` : '');
   document.getElementById('rail-nav').innerHTML = NAV.map(
-    (n) => `<a class="rail-link" href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''}>${site.navIcon(n.key, n.icon)}<span>${label(n)}</span></a>`,
+    (n) => `<a class="rail-link" href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''}>${site.navIcon(n.key, n.icon)}<span>${label(n)}</span>${dot(n)}</a>`,
   ).join('');
   document.getElementById('tabbar').innerHTML = NAV.map(
-    (n) => `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${label(n)}">${site.navIcon(n.key, n.icon)}<span>${short(n)}</span></a>`,
+    (n) => `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${label(n)}">${site.navIcon(n.key, n.icon)}<span>${short(n)}</span>${dot(n)}</a>`,
   ).join('');
 }
 
@@ -217,7 +242,6 @@ document.querySelector('.brand-mark').innerHTML = ornamentMark();
 document.querySelector('.search').insertAdjacentHTML('afterbegin', icon('search'));
 
 const [me] = await Promise.all([api.get('/api/me').catch(() => ({ user: null })), site.load()]);
-app.user = me.user;
 document.getElementById('foot-text').innerHTML = site.t('footer');
-renderUserSlot();
+app.setUser(me.user);
 render();

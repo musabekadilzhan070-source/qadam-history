@@ -20,6 +20,7 @@ import { listPeriods, getPeriod, getTopic, listTests, topicIndex, siteInfo, tota
 import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
+import { feedbackRouter } from './feedback.js';
 import { seedIfEmpty } from './seed.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
@@ -168,6 +169,7 @@ app.get('/api/topics/:slug/test', requireUser, wrap(async (req, res) => {
 
 // ─── Organizer cabinet ─────────────────────────────────────────────
 app.use('/api/org', orgRouter);
+app.use('/api/feedback', requireUser, feedbackRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
 app.get('/api/results', requireUser, wrap(async (req, res) => {

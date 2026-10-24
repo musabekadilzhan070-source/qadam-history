@@ -2974,3 +2974,114 @@ body.is-guest main {
   width: 40px;
   height: 40px;
 }
+
+/* ─── Suggestions ──────────────────────────────────────────────── */
+.nav-dot {
+  position: absolute;
+  top: 5px;
+  right: calc(50% - 22px);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  color: var(--white);
+  background: var(--red);
+  border-radius: 999px;
+}
+.tabbar a {
+  position: relative;
+}
+.fb-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 20px;
+  align-items: start;
+}
+.fb-form-panel {
+  padding: 28px;
+}
+.fb-form-panel h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 800;
+}
+.field textarea {
+  min-height: 140px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  resize: vertical;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+}
+.field textarea:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--white);
+}
+.fb-list-title {
+  margin: 0 0 14px;
+}
+.fb-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fb-item {
+  padding: 20px 22px;
+}
+.fb-item.is-new {
+  border-color: var(--red);
+}
+.fb-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fb-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.fb-date {
+  margin: 4px 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.fb-body,
+.fb-reply p:last-child {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.fb-reply {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-left: 3px solid var(--bordo);
+  border-radius: 0 10px 10px 0;
+}
+.fb-reply .eyebrow {
+  margin: 0 0 6px;
+}
+@media (max-width: 900px) {
+  .fb-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fb-form-panel {
+    padding: 22px 18px;
+  }
+  .nav-dot {
+    top: 1px;
+    right: calc(50% - 20px);
+  }
+}
