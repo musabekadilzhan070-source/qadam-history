@@ -57,7 +57,7 @@ export async function sessionMiddleware(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) {
     const row = await get(
-      `SELECT u.id, u.username, u.display_name, u.created_at FROM sessions s
+      `SELECT u.id, u.username, u.email, u.display_name, u.created_at FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`,
       sha256(token),
@@ -99,6 +99,12 @@ export function makeLimiter({ max, windowMs }) {
   };
 }
 
-export function purgeExpiredSessions() {
-  return run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
+export async function purgeExpiredSessions() {
+  await run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
+  await run('DELETE FROM password_resets WHERE expires_at < ?', Date.now());
 }
+
+/** Signs a user out everywhere (after a password change or reset). */
+export const endAllSessions = (userId) => run('DELETE FROM sessions WHERE user_id = ?', userId);
+
+export const tokenHash = sha256;

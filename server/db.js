@@ -158,6 +158,43 @@ CREATE TABLE IF NOT EXISTS auth_failures (
   locked_until INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL
+);
+
+-- Server-side secrets (signing test sessions). Not content: never published or restored.
+CREATE TABLE IF NOT EXISTS app_secrets (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Emblems the organizer uploads; the built-in library lives in public/assets/js/emblems.js.
+CREATE TABLE IF NOT EXISTS emblems (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  file_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Suggestions and feedback from students to the organizer. Not content: never published or restored.
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  reply TEXT,
+  replied_at TEXT,
+  read_at TEXT,
+  reply_seen INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status, id);
+
 CREATE INDEX IF NOT EXISTS idx_tests_topic ON tests(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_materials_topic ON materials(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_persons_topic ON persons(topic_id, position);
@@ -173,6 +210,20 @@ const COLUMNS = [
   ['questions', 'image_id', 'INTEGER'],
   ['options', 'image_id', 'INTEGER'],
   ['attempts', 'test_id', 'INTEGER'],
+  // Accounts can sign in with an email as well as a login.
+  ['users', 'email', 'TEXT'],
+  // Test builder: description, cover, timing and scoring settings (JSON).
+  ['tests', 'description', "TEXT NOT NULL DEFAULT ''"],
+  ['tests', 'cover_image_id', 'INTEGER'],
+  ['tests', 'settings', "TEXT NOT NULL DEFAULT '{}'"],
+  // Question formats: single, multiple, image, matching, ordering, open, context (children use parent_id).
+  ['questions', 'type', "TEXT NOT NULL DEFAULT 'single'"],
+  ['questions', 'points', 'INTEGER NOT NULL DEFAULT 1'],
+  ['questions', 'data', "TEXT NOT NULL DEFAULT '{}'"],
+  ['questions', 'parent_id', 'INTEGER'],
+  ['attempts', 'score', 'REAL'],
+  ['attempts', 'max_score', 'REAL'],
+  ['attempt_answers', 'answer', 'TEXT'],
   ['attempt_answers', 'option_ids', 'TEXT'],
 ];
 
@@ -200,6 +251,7 @@ export async function migrate() {
       `UPDATE attempts SET test_id = (SELECT x.id FROM tests x WHERE x.topic_id = attempts.topic_id ORDER BY x.id LIMIT 1)
        WHERE test_id IS NULL`,
       `CREATE INDEX IF NOT EXISTS idx_questions_test ON questions(test_id, position)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE) WHERE email IS NOT NULL`,
     ],
     'write',
   );

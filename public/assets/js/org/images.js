@@ -7,7 +7,6 @@ export function imagesView(el, _params, ctx) {
   const draw = () => {
     const s = ctx.state;
     const files = s.files.filter((f) => f.kind === filter);
-    const materialOptions = [{ value: '', label: '— Материалға байланыстырмау —' }, ...s.materials.map((m) => ({ value: m.id, label: m.title }))];
     el.innerHTML = `
       <div class="o-card">
         <div class="o-card-head">
@@ -32,7 +31,7 @@ export function imagesView(el, _params, ctx) {
                     }
                     <label class="o-field"><span class="o-label">Атауы</span><input name="name" value="${esc(f.name)}" maxlength="120" required /></label>
                     ${select({ name: 'topic_id', label: 'Тақырып', value: f.topic_id, options: topicOptions(s, { empty: '— Тақырыпқа байланыстырмау —' }) })}
-                    ${select({ name: 'material_id', label: 'Материал', value: f.material_id, options: materialOptions })}
+                    <input type="hidden" name="material_id" value="${f.material_id ?? ''}" />
                     <p class="o-muted o-media-meta">${formatBytes(f.size)} · ${f.mime.replace('image/', '').toUpperCase()}${f.version > 1 ? ` · ${f.version}-нұсқа` : ''}</p>
                     ${f.used_by.length ? `<p class="o-media-used"><b>Қолданылады:</b> ${f.used_by.map(esc).join('; ')}</p>` : '<p class="o-muted o-media-used">Әзірге еш жерде қолданылмайды.</p>'}
                     <div class="o-row-actions">

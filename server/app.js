@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
@@ -11,11 +12,15 @@ import {
   endSession,
   makeLimiter,
   purgeExpiredSessions,
+  endAllSessions,
+  tokenHash,
 } from './auth.js';
-import { listPeriods, getPeriod, getTopic, listTests, listMaterials, getMaterial, siteInfo, totals } from './content.js';
-import { findTest, firstTestOfTopic, testForStudent, gradeTest, userResults, attemptDetail } from './quiz.js';
+import { mailConfigured, sendMail } from './mail.js';
+import { listPeriods, getPeriod, getTopic, listTests, topicIndex, siteInfo, totals } from './content.js';
+import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
+import { feedbackRouter } from './feedback.js';
 import { seedIfEmpty } from './seed.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
@@ -75,37 +80,32 @@ app.use('/api', (_req, res, next) => {
 
 const loginLimiter = makeLimiter({ max: 10, windowMs: 10 * 60 * 1000 });
 const userId = (req) => req.user?.id ?? null;
-const publicUser = (u) => ({ id: u.id, username: u.username, display_name: u.display_name, created_at: u.created_at });
+const publicUser = (u) => ({ id: u.id, username: u.username, email: u.email ?? null, display_name: u.display_name, created_at: u.created_at });
 
 // ─── Content ───────────────────────────────────────────────────────
-app.get('/api/overview', wrap(async (req, res) => {
-  res.json({ totals: await totals(), periods: await listPeriods(userId(req)) });
+// The whole student site is behind sign-in: content is served to signed-in students only.
+app.get('/api/overview', requireUser, wrap(async (req, res) => {
+  res.json({ totals: await totals(), periods: await listPeriods(userId(req)), tests: await listTests(userId(req)) });
 }));
 
-app.get('/api/periods/:slug', wrap(async (req, res) => {
+app.get('/api/periods/:slug', requireUser, wrap(async (req, res) => {
   const period = await getPeriod(req.params.slug, userId(req));
   if (!period) return res.status(404).json({ error: 'Кезең табылмады.' });
   res.json(period);
 }));
 
-app.get('/api/topics/:slug', wrap(async (req, res) => {
+app.get('/api/topics', requireUser, wrap(async (_req, res) => {
+  res.json({ topics: await topicIndex() });
+}));
+
+app.get('/api/topics/:slug', requireUser, wrap(async (req, res) => {
   const topic = await getTopic(req.params.slug, userId(req));
   if (!topic) return res.status(404).json({ error: 'Тақырып табылмады.' });
   res.json(topic);
 }));
 
-app.get('/api/tests', wrap(async (req, res) => {
+app.get('/api/tests', requireUser, wrap(async (req, res) => {
   res.json({ periods: await listPeriods(userId(req)), tests: await listTests(userId(req)) });
-}));
-
-app.get('/api/materials', wrap(async (_req, res) => {
-  res.json({ periods: await listPeriods(null), ...(await listMaterials()) });
-}));
-
-app.get('/api/materials/:id', wrap(async (req, res) => {
-  const material = await getMaterial(Number(req.params.id));
-  if (!material) return res.status(404).json({ error: 'Материал табылмады.' });
-  res.json(material);
 }));
 
 // Texts, icons and banner image the organizer set for the student pages.
@@ -136,25 +136,32 @@ const testId = (req) => {
   return Number.isInteger(id) ? id : null;
 };
 
-app.get('/api/tests/:id', wrap(async (req, res) => {
+// Starting a test hands out its questions (no answers) and a signed session token.
+app.get('/api/tests/:id', requireUser, wrap(async (req, res) => {
   const found = testId(req) && (await findTest(testId(req)));
   if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
-  res.json({ id: found.test.id, title: found.test.title, topic: found.topic, questions: testForStudent(found.test) });
+  const { test, topic } = found;
+  res.json({ id: test.id, title: test.title, description: test.description, cover_image_id: test.cover_image_id, topic, ...(await startTest(test)) });
 }));
 
-app.post('/api/tests/:id', wrap(async (req, res) => {
+app.post('/api/tests/:id', requireUser, wrap(async (req, res) => {
   const found = testId(req) && (await findTest(testId(req)));
   if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
   const answers = req.body?.answers;
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return res.status(400).json({ error: 'Жауаптар жіберілмеді.' });
   }
-  const result = await gradeTest(found.test, answers, { userId: userId(req), durationSec: req.body?.duration_sec });
-  res.json({ test: { id: found.test.id, title: found.test.title }, topic: found.topic, saved: Boolean(result.attempt_id), ...result });
+  try {
+    const result = await submitTest(found.test, { token: req.body?.token, answers }, { userId: userId(req) });
+    res.json({ test: { id: found.test.id, title: found.test.title }, topic: found.topic, saved: Boolean(result.attempt_id), ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
 }));
 
 // Older links pointed at a topic's single test: answer with that test's id.
-app.get('/api/topics/:slug/test', wrap(async (req, res) => {
+app.get('/api/topics/:slug/test', requireUser, wrap(async (req, res) => {
   const id = await firstTestOfTopic(req.params.slug);
   if (!id) return res.status(404).json({ error: 'Бұл тақырыпта әзірге тест жоқ.' });
   res.json({ test_id: id });
@@ -162,6 +169,7 @@ app.get('/api/topics/:slug/test', wrap(async (req, res) => {
 
 // ─── Organizer cabinet ─────────────────────────────────────────────
 app.use('/api/org', orgRouter);
+app.use('/api/feedback', requireUser, feedbackRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
 app.get('/api/results', requireUser, wrap(async (req, res) => {
@@ -177,37 +185,57 @@ app.get('/api/results/:id', requireUser, wrap(async (req, res) => {
 
 // ─── Accounts ──────────────────────────────────────────────────────
 const USERNAME_RE = /^[\p{L}\p{N}._-]{3,32}$/u;
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
+const BAD_EMAIL = 'Электрондық пошта форматы қате. Мысалы: adilzhan@gmail.com';
+const RESET_TTL_MS = 60 * 60 * 1000;
+
+const findAccount = (login) =>
+  get('SELECT * FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE ORDER BY id LIMIT 1', login, login);
+
+function checkPassword(password, confirm) {
+  if (password.length < 6 || password.length > 128) return 'Құпиясөз кемінде 6 таңбадан тұрсын.';
+  if (confirm !== undefined && confirm !== password) return 'Құпиясөздер сәйкес келмейді.';
+  return null;
+}
 
 app.get('/api/me', wrap(async (req, res) => {
   res.json({ user: req.user ? publicUser(req.user) : null });
 }));
 
 app.post('/api/auth/register', wrap(async (req, res) => {
-  const username = String(req.body?.username ?? '').trim();
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
   const displayName = String(req.body?.display_name ?? '').trim();
   const password = String(req.body?.password ?? '');
-  if (!USERNAME_RE.test(username)) {
-    return res.status(400).json({ error: 'Логин 3–32 таңбадан тұрсын: әріп, цифр, нүкте, сызықша.' });
-  }
+  const confirm = req.body?.password_confirm === undefined ? undefined : String(req.body.password_confirm);
+  // Older clients sent a login instead of an email; both are accepted.
+  const username = String(req.body?.username ?? '').trim() || email;
   if (displayName.length < 2 || displayName.length > 60) {
     return res.status(400).json({ error: 'Аты-жөніңізді жазыңыз (2–60 таңба).' });
   }
-  if (password.length < 6 || password.length > 128) {
-    return res.status(400).json({ error: 'Құпиясөз кемінде 6 таңбадан тұрсын.' });
+  if (email && !EMAIL_RE.test(email)) return res.status(400).json({ error: BAD_EMAIL });
+  if (!email && !USERNAME_RE.test(username)) {
+    return res.status(400).json({ error: 'Электрондық поштаңызды жазыңыз.' });
   }
-  if (await get('SELECT 1 AS ok FROM users WHERE username = ?', username)) {
-    return res.status(409).json({ error: 'Бұл логин бос емес. Басқасын таңдаңыз.' });
+  if (email && username !== email && !USERNAME_RE.test(username)) {
+    return res.status(400).json({ error: 'Логин 3–32 таңбадан тұрсын: әріп, цифр, нүкте, сызықша.' });
   }
+  const pwError = checkPassword(password, confirm);
+  if (pwError) return res.status(400).json({ error: pwError });
+  if (email && (await findAccount(email))) {
+    return res.status(409).json({ error: 'Бұл электрондық поштамен аккаунт бар. «Кіру» бетін ашыңыз.' });
+  }
+  if (await findAccount(username)) return res.status(409).json({ error: 'Бұл логин бос емес. Басқасын таңдаңыз.' });
   let lastInsertRowid;
   try {
     ({ lastInsertRowid } = await run(
-    'INSERT INTO users (username, display_name, password_hash) VALUES (?, ?, ?)',
-    username,
-    displayName,
+      'INSERT INTO users (username, email, display_name, password_hash) VALUES (?, ?, ?, ?)',
+      username,
+      email || null,
+      displayName,
       hashPassword(password),
     ));
   } catch (err) {
-    if (/UNIQUE/i.test(String(err.message))) return res.status(409).json({ error: 'Бұл логин бос емес. Басқасын таңдаңыз.' });
+    if (/UNIQUE/i.test(String(err.message))) return res.status(409).json({ error: 'Бұл электрондық поштамен аккаунт бар.' });
     throw err;
   }
   await startSession(req, res, lastInsertRowid);
@@ -215,15 +243,17 @@ app.post('/api/auth/register', wrap(async (req, res) => {
 }));
 
 app.post('/api/auth/login', wrap(async (req, res) => {
-  const username = String(req.body?.username ?? '').trim();
+  const login = String(req.body?.login ?? req.body?.username ?? '').trim();
   const password = String(req.body?.password ?? '');
-  const key = `${req.ip}|${username.toLowerCase()}`;
+  if (!login || !password) return res.status(400).json({ error: 'Логинді (немесе поштаны) және құпиясөзді жазыңыз.' });
+  if (login.includes('@') && !EMAIL_RE.test(login)) return res.status(400).json({ error: BAD_EMAIL });
+  const key = `${req.ip}|${login.toLowerCase()}`;
   const wait = loginLimiter.blocked(key);
   if (wait) return res.status(429).json({ error: `Тым көп әрекет. ${Math.ceil(wait / 60)} минуттан кейін қайталаңыз.` });
-  const user = username ? await get('SELECT * FROM users WHERE username = ?', username) : null;
+  const user = await findAccount(login);
   if (!user || !verifyPassword(password, user.password_hash)) {
     loginLimiter.fail(key);
-    return res.status(401).json({ error: 'Логин немесе құпиясөз қате.' });
+    return res.status(401).json({ error: 'Логин (пошта) немесе құпиясөз қате.' });
   }
   loginLimiter.reset(key);
   await startSession(req, res, user.id);
@@ -235,13 +265,64 @@ app.post('/api/auth/logout', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+app.get('/api/auth/options', (_req, res) => {
+  res.json({ email_reset: mailConfigured() });
+});
+
+// Password reset by email. The answer is the same whether or not the address exists.
+app.post('/api/auth/forgot', wrap(async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: BAD_EMAIL });
+  if (!mailConfigured()) {
+    return res.status(503).json({
+      error: 'Хат жіберу қызметі әзірге қосылмаған. Құпиясөзді қалпына келтіру үшін организаторға жүгініңіз: ол уақытша құпиясөз береді.',
+    });
+  }
+  const wait = loginLimiter.blocked(`forgot|${req.ip}`);
+  if (wait) return res.status(429).json({ error: `Тым көп әрекет. ${Math.ceil(wait / 60)} минуттан кейін қайталаңыз.` });
+  loginLimiter.fail(`forgot|${req.ip}`);
+  const user = await get('SELECT id, display_name, email FROM users WHERE email = ? COLLATE NOCASE', email);
+  if (user) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    await run('INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)', tokenHash(token), user.id, Date.now() + RESET_TTL_MS);
+    const origin = process.env.SITE_URL || `${req.protocol}://${req.get('host')}`;
+    await sendMail({
+      to: user.email,
+      subject: 'QADAM: құпиясөзді қалпына келтіру',
+      text: `Сәлеметсіз бе, ${user.display_name}!\n\nЖаңа құпиясөз орнату үшін сілтемені ашыңыз (1 сағат жарамды):\n${origin}/reset?token=${token}\n\nЕгер сіз сұрамасаңыз, бұл хатты елемеңіз.`,
+    });
+  }
+  res.json({ ok: true, message: 'Егер бұл поштамен аккаунт болса, оған сілтеме жіберілді. Поштаңызды тексеріңіз.' });
+}));
+
+app.post('/api/auth/reset', wrap(async (req, res) => {
+  const token = String(req.body?.token ?? '');
+  const password = String(req.body?.password ?? '');
+  const pwError = checkPassword(password, String(req.body?.password_confirm ?? ''));
+  if (pwError) return res.status(400).json({ error: pwError });
+  const row = token && (await get('SELECT user_id FROM password_resets WHERE token_hash = ? AND expires_at > ?', tokenHash(token), Date.now()));
+  if (!row) return res.status(400).json({ error: 'Сілтеме жарамсыз немесе мерзімі өтіп кеткен. Қайта сұраңыз.' });
+  await run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(password), row.user_id);
+  await run('DELETE FROM password_resets WHERE user_id = ?', row.user_id);
+  await endAllSessions(row.user_id);
+  await startSession(req, res, row.user_id);
+  res.json({ user: publicUser(await get('SELECT * FROM users WHERE id = ?', row.user_id)) });
+}));
+
 app.patch('/api/me', requireUser, wrap(async (req, res) => {
-  const displayName = String(req.body?.display_name ?? '').trim();
+  const displayName = String(req.body?.display_name ?? req.user.display_name).trim();
   if (displayName.length < 2 || displayName.length > 60) {
     return res.status(400).json({ error: 'Аты-жөніңізді жазыңыз (2–60 таңба).' });
   }
-  await run('UPDATE users SET display_name = ? WHERE id = ?', displayName, req.user.id);
-  res.json({ user: publicUser({ ...req.user, display_name: displayName }) });
+  let email = req.user.email;
+  if (req.body?.email !== undefined) {
+    email = String(req.body.email).trim().toLowerCase() || null;
+    if (email && !EMAIL_RE.test(email)) return res.status(400).json({ error: BAD_EMAIL });
+    const other = email && (await get('SELECT id FROM users WHERE (email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE) AND id <> ?', email, email, req.user.id));
+    if (other) return res.status(409).json({ error: 'Бұл электрондық пошта басқа аккаунтқа тіркелген.' });
+  }
+  await run('UPDATE users SET display_name = ?, email = ? WHERE id = ?', displayName, email, req.user.id);
+  res.json({ user: publicUser({ ...req.user, display_name: displayName, email }) });
 }));
 
 app.post('/api/me/password', requireUser, wrap(async (req, res) => {

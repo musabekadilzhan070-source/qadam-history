@@ -48,25 +48,13 @@ export async function topicView(el, [slug], app, alive) {
           .map(
             (x) => `<section class="panel aside-card aside-dark">
                 <h2>${t.tests.length > 1 || x.title !== t.title ? esc(x.title) : 'Тақырыптық тест'}</h2>
-                <p>${x.question_count} сұрақ. Жауаптар соңында тексеріледі, әр қатеге түсініктеме беріледі.</p>
+                ${x.description ? `<p>${esc(x.description)}</p>` : ''}
+                <p>${x.question_count} сұрақ${x.time_limit_min ? ` · ${x.time_limit_min} минут` : ''}. Жауаптар соңында тексеріледі, әр қатеге түсініктеме беріледі.</p>
                 ${x.best_percent !== null ? `<p style="margin-top:12px">Үздік нәтижең: ${scoreBadge(x.best_percent)}</p>` : ''}
                 <a class="btn btn-block" href="/tests/${x.id}" data-link>Тестті бастау ${icon('arrow', 'icon icon-arrow')}</a>
               </section>`,
           )
           .join('')}
-        ${
-          t.materials.length
-            ? `<section class="panel aside-card">
-                <h2>Қосымша материалдар</h2>
-                <ul class="mini-list">${t.materials
-                  .map(
-                    (m) => `<li><a href="/materials/${m.id}" data-link><span class="mini-num">${icon(m.pdf_id && !m.body ? 'book' : 'materials')}</span>
-                      <span class="mini-body"><b>${esc(m.title)}</b><span>${m.pdf_id ? 'PDF құжат' : 'Мәтін'}</span></span></a></li>`,
-                  )
-                  .join('')}</ul>
-              </section>`
-            : ''
-        }
         ${
           t.key_points.length
             ? `<section class="panel aside-card">

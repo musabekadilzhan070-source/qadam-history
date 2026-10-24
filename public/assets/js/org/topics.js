@@ -8,16 +8,15 @@ import { iconField, bindIconFields } from './icons.js';
 
 const related = (s, id) => ({
   tests: s.tests.filter((x) => x.topic_id === id),
-  materials: s.materials.filter((m) => m.topic_id === id),
   persons: s.persons.filter((p) => p.topic_id === id),
 });
 
-/** Asks how to delete a topic: keep its tests and materials, or delete them too. */
+/** Asks how to delete a topic: keep its tests, or delete them too. */
 export async function deleteTopic(ctx, topic) {
   const r = related(ctx.state, topic.id);
-  const total = r.tests.length + r.materials.length + r.persons.length;
+  const total = r.tests.length + r.persons.length;
   const body = total
-    ? `<p>Бұл тақырыпқа байланысты: <b>${r.tests.length}</b> тест, <b>${r.materials.length}</b> материал, <b>${r.persons.length}</b> тұлға.</p>
+    ? `<p>Бұл тақырыпқа байланысты: <b>${r.tests.length}</b> тест, <b>${r.persons.length}</b> тұлға.</p>
        <p>Оларды сақтап қалуға (тақырыпсыз, жасырын күйде қалады, кейін басқа тақырыпқа байланыстыруға болады) немесе тақырыппен бірге жоюға болады.</p>
        <p class="o-muted">Оқушылардың бұрынғы нәтижелері «Менің нәтижелерім» бетінде сақталады.</p>`
     : '<p>Тақырып біржола жойылады. Оқушылардың бұрынғы нәтижелері сақталады.</p>';
@@ -27,7 +26,7 @@ export async function deleteTopic(ctx, topic) {
     buttons: total
       ? [
           { label: 'Болдырмау', value: null, kind: 'ghost' },
-          { label: 'Тест пен материалды сақтау', value: 'keep', kind: 'dark' },
+          { label: 'Тесттерді сақтау', value: 'keep', kind: 'dark' },
           { label: 'Барлығын бірге жою', value: 'cascade', kind: 'danger' },
         ]
       : [
@@ -38,7 +37,7 @@ export async function deleteTopic(ctx, topic) {
   if (!mode) return false;
   try {
     await org.del(`/topics/${topic.id}?mode=${mode}`);
-    toast(mode === 'cascade' ? 'Тақырып тест пен материалдарымен бірге жойылды.' : 'Тақырып жойылды.');
+    toast(mode === 'cascade' ? 'Тақырып тесттерімен бірге жойылды.' : 'Тақырып жойылды.');
     await ctx.reload();
     return true;
   } catch (err) {
@@ -77,7 +76,7 @@ export function topicsView(el, _params, ctx) {
                       <span class="o-row-icon">${t.icon ? renderIcon(t.icon, null, 'icon') : String(i + 1).padStart(2, '0')}</span>
                       <div class="o-row-body">
                         <a href="/organizer/topics/${t.id}" data-link><b>${esc(t.title)}</b></a>
-                        <small>${esc(t.range_label || '')}${t.range_label ? ' · ' : ''}${r.tests.length} тест · ${r.materials.length} материал${t.image_id ? ' · суреті бар' : ''}</small>
+                        <small>${esc(t.range_label || '')}${t.range_label ? ' · ' : ''}${r.tests.length} тест${t.image_id ? ' · суреті бар' : ''}</small>
                       </div>
                       ${statusBadge(t.published)}
                       <div class="o-row-actions">
@@ -157,14 +156,14 @@ export function topicEditView(el, [id], ctx) {
         ${input({ name: 'slug', label: 'Сілтеме (URL)', value: t.slug, max: 60, hint: 'Бос қалдырсаңыз, атауынан жасалады. Өзгертсеңіз, ескі сілтеме жұмыс істемейді.' })}
       </div>
       ${textarea({ name: 'summary', label: 'Қысқаша сипаттама', value: t.summary, rows: 3, max: 600 })}
-      ${textarea({ name: 'body', label: 'Оқу материалы', value: t.body, rows: 14, hint: '«## » деп басталған жол — бөлім атауы, «- » деп басталған жол — тізім. Абзацтарды бос жолмен бөліңіз.' })}
+      ${textarea({ name: 'body', label: 'Тақырып мәтіні', value: t.body, rows: 14, hint: '«## » деп басталған жол — бөлім атауы, «- » деп басталған жол — тізім. Абзацтарды бос жолмен бөліңіз.' })}
       <div class="o-field"><span class="o-label">Есте сақтайтын деректер</span>
         <ul class="o-kps" id="kps">${t.key_points.map(keyPointRow).join('')}</ul>
         <button type="button" class="btn btn-ghost btn-sm" id="kp-add">+ Дерек қосу</button>
       </div>
       <div class="o-grid-2">
         ${fileField({ name: 'image_id', kind: 'image', value: t.image_id, label: 'Тақырып суреті', hint: 'JPG, PNG немесе WEBP, 3 МБ дейін.' })}
-        ${iconField({ name: 'icon', label: 'Тақырып белгішесі', value: t.icon })}
+        ${iconField({ name: 'icon', label: 'Тақырып эмблемасы', value: t.icon, emblems: true })}
       </div>
       ${toggle({ name: 'published', label: 'Оқушыларға көрсету (жариялағаннан кейін)', checked: t.published })}
     </form>`;

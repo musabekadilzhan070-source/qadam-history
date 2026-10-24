@@ -13,7 +13,7 @@ export async function profileView(el, _params, app, alive) {
       <section class="panel">
         <div class="profile-card">
           <span class="avatar">${esc(initials(u.display_name))}</span>
-          <div><h2 id="pname">${esc(u.display_name)}</h2><p>@${esc(u.username)} · ${esc(formatDate(u.created_at).split(',')[0])} бастап</p></div>
+          <div><h2 id="pname">${esc(u.display_name)}</h2><p><span id="pmail">${esc(u.email || '@' + u.username)}</span> · ${esc(formatDate(u.created_at).split(',')[0])} бастап</p></div>
         </div>
         <div class="stat-row" style="margin:26px 0 22px">
           <div><b>${summary.tests_done}</b><span>тест</span></div>
@@ -27,10 +27,11 @@ export async function profileView(el, _params, app, alive) {
       </section>
 
       <section class="panel">
-        <h2>Аты-жөнін өзгерту</h2>
+        <h2>Аты-жөні және пошта</h2>
         <form id="name-form" novalidate>
           <div class="form-msg"></div>
           <div class="field"><label for="display_name">Аты-жөніңіз</label><input id="display_name" name="display_name" value="${esc(u.display_name)}" autocomplete="name" /></div>
+          <div class="field"><label for="email">Электрондық пошта</label><input id="email" name="email" type="email" value="${esc(u.email || '')}" autocomplete="email" autocapitalize="off" spellcheck="false" /><small>Поштамен кіруге және құпиясөзді қалпына келтіруге керек.</small></div>
           <button class="btn btn-sm" type="submit">Сақтау</button>
         </form>
       </section>
@@ -54,10 +55,13 @@ export async function profileView(el, _params, app, alive) {
     e.preventDefault();
     const form = e.currentTarget;
     try {
-      const { user } = await api.patch('/api/me', { display_name: form.display_name.value });
+      const email = form.email.value.trim();
+      if (email && !/^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new Error('Электрондық пошта форматы қате. Мысалы: adilzhan@gmail.com');
+      const { user } = await api.patch('/api/me', { display_name: form.display_name.value, email });
       app.setUser(user);
       el.querySelector('#pname').textContent = user.display_name;
       el.querySelector('.profile-card .avatar').textContent = initials(user.display_name);
+      el.querySelector('#pmail').textContent = user.email || `@${user.username}`;
       message(form, 'Сақталды.', true);
     } catch (err) {
       message(form, err.message, false);

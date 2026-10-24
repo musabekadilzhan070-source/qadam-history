@@ -24,6 +24,7 @@ const ICONS = {
   tests: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11 1.5 1.5L13 9.5"/><path d="M8.5 16.5h7"/>',
   materials: '<path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5V19c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/>',
   results: '<path d="M4 20h16"/><path d="M7 20v-6M12 20V8M17 20v-9"/>',
+  feedback: '<path d="M4 5.5h16v10.5H10l-4.5 3.5V16H4z"/><path d="M8 9.5h8M8 12.5h5"/>',
   profile: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.3-3.6 4.2-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { all, get, run, batch } from './db.js';
+import { assembleQuestions, readyQuestions, settingsOf } from './questions.js';
 
 // Draft = the content tables the organizer edits. Students only ever see a published
 // snapshot: a JSON copy of the published part of the draft, stored in `publications`.
@@ -55,8 +56,7 @@ function snapshotFrom(dump) {
       icon: parseJson(t.icon || 'null', null),
     }));
   const topicIds = new Set(topics.map((t) => t.id));
-  const options = [...dump.options].sort(byPos);
-  const questions = [...dump.questions].sort(byPos);
+  const testOfQuestion = new Map(dump.questions.map((q) => [q.id, q.test_id]));
   const tests = dump.tests
     .filter((x) => x.published && topicIds.has(x.topic_id))
     .sort(byPos)
@@ -64,19 +64,16 @@ function snapshotFrom(dump) {
       id: x.id,
       topic_id: x.topic_id,
       title: x.title,
-      questions: questions
-        .filter((q) => q.test_id === x.id)
-        .map((q) => ({
-          id: q.id,
-          text: q.text,
-          explanation: q.explanation,
-          image_id: q.image_id ?? null,
-          options: options
-            .filter((o) => o.question_id === q.id)
-            .map((o) => ({ id: o.id, text: o.text, image_id: o.image_id ?? null, is_correct: Boolean(o.is_correct) })),
-        }))
-        // A question without options or without a correct answer cannot be graded: students never get it.
-        .filter((q) => q.options.length >= 2 && q.options.some((o) => o.is_correct)),
+      description: x.description || '',
+      cover_image_id: x.cover_image_id ?? null,
+      settings: settingsOf(x.settings),
+      // Questions without a correct answer (or otherwise incomplete) cannot be graded: students never get them.
+      questions: readyQuestions(
+        assembleQuestions(
+          dump.questions.filter((q) => q.test_id === x.id),
+          dump.options.filter((o) => testOfQuestion.get(o.question_id) === x.id),
+        ),
+      ),
     }))
     .filter((x) => x.questions.length > 0);
   const materials = dump.materials
@@ -118,6 +115,49 @@ export async function publish(note = '') {
   );
   cache = null;
   return lastInsertRowid;
+}
+
+/**
+ * Puts one test live (or takes it down) without publishing the rest of the draft: the current
+ * snapshot gets this test as it is in the draft now. Returns an error text when it cannot go live.
+ */
+export async function publishTest(testId, live, note) {
+  const dump = await dumpDraft();
+  const current = await published();
+  const fresh = snapshotFrom(dump);
+  const tests = current.tests.filter((x) => x.id !== testId);
+  let topics = current.topics;
+  if (live) {
+    const test = fresh.tests.find((x) => x.id === testId);
+    if (!test) {
+      const row = dump.tests.find((x) => x.id === testId);
+      return current.topics.some((t) => t.id === row?.topic_id) || fresh.topics.some((t) => t.id === row?.topic_id)
+        ? 'Тестте оқушыға беруге дайын сұрақ жоқ.'
+        : 'Тесттің тақырыбы оқушыларға жарияланбаған. Алдымен тақырыпты жариялаңыз.';
+    }
+    // The topic may be new in the draft: bring it (and only it) along.
+    if (!topics.some((t) => t.id === test.topic_id)) topics = [...topics, fresh.topics.find((t) => t.id === test.topic_id)];
+    const order = new Map(fresh.tests.map((x, i) => [x.id, i]));
+    tests.push(test);
+    tests.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+  }
+  const snapshot = { ...current, topics, tests };
+  await run(
+    'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
+    String(note).slice(0, 200),
+    hashOf(snapshot),
+    JSON.stringify({ snapshot, draft: dump }),
+  );
+  cache = null;
+  return null;
+}
+
+/** 'hidden', 'live' or 'changed' (live, with saved edits students do not see yet). */
+export async function testLiveState(testId) {
+  const live = (await published()).tests.find((x) => x.id === testId);
+  if (!live) return 'hidden';
+  const draft = snapshotFrom(await dumpDraft()).tests.find((x) => x.id === testId);
+  return draft && hashOf(draft) === hashOf(live) ? 'live' : 'changed';
 }
 
 export async function listPublications() {
