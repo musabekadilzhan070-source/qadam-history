@@ -193,7 +193,7 @@ export async function quizView(el, [id], app, alive) {
     heading,
     crumbs: `<ol class="breadcrumb">
         <li><a href="/tests" data-link>Тесттер</a></li>
-        <li><a href="/topics/${encodeURIComponent(topic.slug)}" data-link>${esc(topic.title)}</a></li>
+        <li>${esc(topic.title)}</li>
         <li aria-current="page">Тест</li>
       </ol>`,
     // «Қайта тапсыру» opens the page again, which starts a new session.

@@ -11,7 +11,7 @@ export async function periodsView(el, _params, _app, alive) {
     ${pageHead({
       eyebrow: 'Қазақстан тарихы',
       title: 'Тарихи кезеңдер',
-      text: site.texts.periods_page_text || 'Кезеңді таңдап, оның тақырыптарын ретімен оқып, әр тақырып бойынша тест тапсыр.',
+      text: site.texts.periods_page_text || 'Кезеңді таңдап, әр тақырып бойынша тест тапсыр.',
       extra: `<ul class="head-stats"><li><b>${totals.periods}</b>кезең</li><li><b>${totals.topics}</b>тақырып</li><li><b>${totals.tests}</b>тест</li><li><b>${totals.questions}</b>сұрақ</li></ul>`,
     })}
     <div class="period-grid">${periods.map(periodCard).join('')}</div>`;
@@ -37,7 +37,7 @@ export async function periodView(el, [slug], app, alive) {
         <li class="panel topic-row">
           <span class="topic-index" aria-hidden="true">${t.icon ? renderIcon(t.icon, null, 'icon topic-icon') : pad2(i + 1)}</span>
           <div>
-            <h2><a href="/topics/${encodeURIComponent(t.slug)}" data-link>${esc(t.title)}</a></h2>
+            <h2>${t.first_test_id ? `<a href="/tests/${t.first_test_id}" data-link>${esc(t.title)}</a>` : esc(t.title)}</h2>
             <p class="range">${esc(t.range_label)}</p>
             <p>${esc(t.summary)}</p>
             <div class="meta">
@@ -46,8 +46,7 @@ export async function periodView(el, [slug], app, alive) {
             </div>
           </div>
           <div class="topic-actions">
-            <a class="btn btn-dark btn-sm" href="/topics/${encodeURIComponent(t.slug)}" data-link>${icon('book')} Оқу</a>
-            ${t.first_test_id ? `<a class="btn btn-sm" href="/tests/${t.first_test_id}" data-link>Тест</a>` : ''}
+            ${t.first_test_id ? `<a class="btn btn-sm" href="/tests/${t.first_test_id}" data-link>Тестті бастау</a>` : '<span class="range">Тест әлі жоқ</span>'}
           </div>
         </li>`,
         )

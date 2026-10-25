@@ -1,11 +1,13 @@
 // Question formats and the checks that decide whether a question can reach students.
 // Shared by the server (saving, publishing, grading) and the cabinet (live hints while editing).
 
-export const TYPES = ['single', 'multiple', 'image', 'matching', 'ordering', 'open', 'context'];
+// The four main formats first (quiz with one or several answers, matching, chronological order), then the extra ones.
+export const TYPES = ['single', 'multiple', 'matching', 'ordering', 'image', 'open', 'context'];
+export const MAIN_TYPES = ['single', 'multiple', 'matching', 'ordering'];
 export const CHOICE_TYPES = ['single', 'multiple', 'image'];
 export const TYPE_LABELS = {
-  single: 'Бір дұрыс жауап',
-  multiple: 'Бірнеше дұрыс жауап',
+  single: 'Викторина — біржауапты',
+  multiple: 'Викторина — көпжауапты',
   image: 'Суретпен берілетін сұрақ',
   matching: 'Сәйкестендіру',
   ordering: 'Хронологиялық реттілік',
@@ -28,7 +30,7 @@ export function questionProblems(q) {
     if (q.options.length < 2) out.push('кемінде екі жауап нұсқасы керек');
     else if (filled.length < q.options.length) out.push('бос жауап нұсқасы бар');
     if (!right) out.push('дұрыс жауап белгіленбеген');
-    if (q.type === 'single' && right > 1) out.push('«Бір дұрыс жауап» түрінде тек бір жауап белгіленеді');
+    if (q.type === 'single' && right > 1) out.push('біржауапты викторинада тек бір жауап белгіленеді');
     if (q.type === 'image' && !q.image_id) out.push('сұрақ суреті жүктелмеген');
   } else if (q.type === 'matching') {
     const pairs = q.data.pairs || [];

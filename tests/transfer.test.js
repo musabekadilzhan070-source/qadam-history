@@ -142,13 +142,15 @@ test('bad rows are listed by number and a failed import changes nothing', async 
   const parsed = (await org('POST', '/api/org/import/parse', csv)).body;
   assert.deepEqual(parsed.errors.map((e) => e.row), [3, 4, 5, 7, 8, 10]);
   assert.match(parsed.errors[0].message, /«5»/);
+  assert.match(parsed.errors[0].column, /^F \(«Дұрыс жауап»\)$/);
+  assert.match(parsed.errors[1].column, /«Түрі»/);
   assert.equal(parsed.count, 2);
   assert.match(parsed.warnings.join(' '), /99999/);
   assert.equal(parsed.questions[1].image_id, null);
 
   // Header without the needed columns.
   const noHeader = (await org('POST', '/api/org/import/parse', writeCsv([['a', 'b'], ['1', '2']]))).body;
-  assert.match(noHeader.errors[0].message, /Түрі, Сұрақ мәтіні, Нұсқа 1/);
+  assert.match(noHeader.errors[0].message, /Сұрақ түрі, Сұрақ мәтіні, Жауаптар/);
   // Not a spreadsheet, and the old .xls format.
   assert.equal((await org('POST', '/api/org/import/parse', PNG)).status, 400);
   const xls = Buffer.alloc(16);
@@ -170,6 +172,76 @@ test('bad rows are listed by number and a failed import changes nothing', async 
   const noTopic = await org('POST', '/api/org/import/commit', { target: 'new', title: 'X', questions: parsed.questions });
   assert.equal(noTopic.status, 400);
   assert.equal((await org('GET', '/api/org/state')).body.tests.length, st.tests.length);
+});
+
+test('the one-cell format: quiz, multiple answers, matching and chronology are built as real tasks', async () => {
+  const org = await organizer();
+  const csv = writeCsv([
+    ['Сұрақ түрі', 'Сұрақ мәтіні', 'Жауаптар', 'Дұрыс жауап'],
+    ['Біржауапты', 'Қазақ хандығы қай жылы құрылды?', '1456; 1465; 1470; 1480', '1465'],
+    ['Көпжауапты', 'Қазақ хандығының негізін қалаған хандарды таңдаңыз', 'Керей; Жәнібек; Қасым; Тәуке', 'Керей; Жәнібек'],
+    ['Сәйкестендіру', 'Хандарды билік құрған жылдарымен сәйкестендіріңіз', 'Керей — 1465–1473; Қасым — 1511–1521', 'Керей — 1465–1473; Қасым — 1511–1521'],
+    ['Хронологиялық реттілік', 'Оқиғаларды хронологиялық ретпен орналастырыңыз',
+      'Тәуке ханның билікке келуі — 1680; Қазақ хандығының құрылуы — 1465–1466; Қасым ханның билікке келуі — 1511',
+      'Қазақ хандығының құрылуы — 1465–1466; Қасым ханның билікке келуі — 1511; Тәуке ханның билікке келуі — 1680'],
+    ['Викторина — біржауапты', 'Бірінші нұсқа нөмірмен', 'Иә; Жоқ', '1'],
+    ['Біржауапты', 'Екі дұрыс жауап', 'А; Б; В', 'А; Б'],
+    ['Сәйкестендіру', 'Жұбы жоқ', 'Керей; Қасым', ''],
+    ['Хронологиялық реттілік', 'Бөтен оқиға', 'А — 1; Б — 2', 'А — 1; В — 3'],
+    ['Көпжауапты', 'Жоқ жауап', 'А; Б; В', 'А; Г'],
+    ['Біржауапты', 'Жауабы жоқ', 'А; Б', ''],
+  ]);
+  const parsed = (await org('POST', '/api/org/import/parse', csv)).body;
+  assert.deepEqual(parsed.errors.map((e) => [e.row, e.column.split(' ')[0]]), [[7, 'D'], [8, 'C'], [9, 'D'], [10, 'D'], [11, 'D']]);
+  assert.match(parsed.errors[0].message, /Көпжауапты/);
+  assert.match(parsed.errors[3].message, /«Г»/);
+  assert.equal(parsed.count, 5);
+  assert.deepEqual(parsed.by_type, { single: 2, multiple: 1, matching: 1, ordering: 1 });
+  const [single, multiple, matching, ordering, byNumber] = parsed.questions;
+  assert.deepEqual(single.options.map((o) => [o.text, o.is_correct]), [['1456', false], ['1465', true], ['1470', false], ['1480', false]]);
+  assert.deepEqual(multiple.options.filter((o) => o.is_correct).map((o) => o.text), ['Керей', 'Жәнібек']);
+  assert.deepEqual(matching.data.pairs.map((p) => [p.left, p.right]), [['Керей', '1465–1473'], ['Қасым', '1511–1521']]);
+  assert.deepEqual(ordering.data.items.map((i) => [i.text, i.date]), [
+    ['Қазақ хандығының құрылуы', '1465–1466'],
+    ['Қасым ханның билікке келуі', '1511'],
+    ['Тәуке ханның билікке келуі', '1680'],
+  ]);
+  assert.equal(byNumber.options[0].is_correct, true);
+
+  // Saved as real tasks, published, and taken by a student: matching and ordering are graded, ordering comes mixed up.
+  const st = (await org('GET', '/api/org/state')).body;
+  const done = await org('POST', '/api/org/import/commit', { target: 'new', title: 'Хандық', topic_id: st.topics[0].id, questions: parsed.questions });
+  assert.equal(done.status, 201);
+  const t = done.body.test;
+  assert.deepEqual(t.questions.map((q) => q.type), ['single', 'multiple', 'matching', 'ordering', 'single']);
+  assert.deepEqual(t.problems, []);
+  assert.equal((await org('POST', `/api/org/tests/${t.id}/publish`)).status, 200);
+
+  const pupil = await student();
+  const paper = (await pupil('GET', `/api/tests/${t.id}`)).body;
+  const q = (type) => paper.units.find((u) => u.type === type);
+  const ord = q('ordering');
+  const rightOrder = t.questions[3].data.items.map((i) => i.text);
+  assert.notDeepEqual(ord.items.map((i) => i.text), rightOrder);
+  const answers = {};
+  for (const u of paper.units) {
+    const src = t.questions.find((x) => x.text === u.text);
+    if (u.type === 'matching') answers[u.id] = Object.fromEntries(u.left.map((l) => [l.key, l.key]));
+    else if (u.type === 'ordering') answers[u.id] = rightOrder.map((text) => u.items.find((i) => i.text === text).key);
+    else answers[u.id] = u.options.filter((o) => src.options.find((so) => so.text === o.text).is_correct).map((o) => o.id);
+  }
+  const result = (await pupil('POST', `/api/tests/${t.id}`, { answers, token: paper.token })).body;
+  assert.equal(result.percent, 100);
+  // A wrong order and a half-chosen multiple answer are not counted as right.
+  const again = (await pupil('GET', `/api/tests/${t.id}`)).body;
+  const wrong = {};
+  for (const u of again.units) {
+    if (u.type === 'ordering') wrong[u.id] = [...rightOrder].reverse().map((text) => u.items.find((i) => i.text === text).key);
+    if (u.type === 'multiple' || (u.options && u.multiple)) wrong[u.id] = [u.options.find((o) => o.text === 'Керей').id];
+  }
+  const r2 = (await pupil('POST', `/api/tests/${t.id}`, { answers: wrong, token: again.token })).body;
+  assert.equal(r2.items.find((i) => i.type === 'ordering').is_correct, false);
+  assert.equal(r2.items.find((i) => i.type === 'multiple').is_correct, false);
 });
 
 test('import and export need the organizer', async () => {

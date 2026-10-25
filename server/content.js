@@ -5,9 +5,6 @@ import { defaultTopicEmblem } from './emblem-defaults.js';
 
 // Everything here reads the published snapshot, so drafts never reach students.
 
-// Reading time from the material's word count, ~130 words a minute.
-const readMinutes = (body) => Math.max(1, Math.round(String(body).split(/\s+/).filter(Boolean).length / 130));
-
 async function bestByTest(userId) {
   if (!userId) return new Map();
   const rows = await all(
@@ -104,30 +101,6 @@ export async function getPeriod(slug, userId) {
   };
 }
 
-export async function getTopic(slug, userId) {
-  const snap = await published();
-  const topic = snap.topics.find((t) => t.slug === slug);
-  if (!topic) return null;
-  const period = snap.periods.find((p) => p.id === topic.period_id);
-  const siblings = snap.topics.filter((t) => t.period_id === topic.period_id);
-  const i = siblings.findIndex((t) => t.id === topic.id);
-  const best = await bestByTest(userId);
-  const tests = snap.tests.filter((x) => x.topic_id === topic.id);
-  return {
-    ...topicSummary(snap, topic, best),
-    body: topic.body,
-    key_points: topic.key_points,
-    read_minutes: readMinutes(topic.body),
-    period_slug: period.slug,
-    period_title: period.title,
-    period_number: period.number,
-    tests: tests.map((x) => testCard(x, best)),
-    persons: snap.persons.filter((p) => p.topic_id === topic.id),
-    prev: siblings[i - 1] ? { slug: siblings[i - 1].slug, title: siblings[i - 1].title } : null,
-    next: siblings[i + 1] ? { slug: siblings[i + 1].slug, title: siblings[i + 1].title } : null,
-  };
-}
-
 /** All published tests in period and topic order. */
 export async function listTests(userId) {
   const snap = await published();
@@ -147,18 +120,6 @@ export async function listTests(userId) {
           period_number: p.number,
         });
       }
-    }
-  }
-  return out;
-}
-
-/** Topic index for the search box: titles, dates and key facts. */
-export async function topicIndex() {
-  const snap = await published();
-  const out = [];
-  for (const p of snap.periods) {
-    for (const t of snap.topics.filter((tt) => tt.period_id === p.id)) {
-      out.push({ slug: t.slug, title: t.title, range_label: t.range_label, summary: t.summary, key_points: t.key_points, period_title: p.title });
     }
   }
   return out;

@@ -86,7 +86,7 @@ export async function homeView(el, _params, app, alive) {
         <h1 id="banner-title"><span>${site.t('banner_line1')}</span><span>${site.t('banner_line2')}</span><span class="accent">${site.t('banner_line3')}</span></h1>
         <p>${site.t('banner_text')}</p>
         <div class="banner-actions">
-          <a class="btn" href="/periods" data-link>${site.t('banner_button')} ${icon('arrow', 'icon icon-arrow')}</a>
+          <a class="btn" href="/tests" data-link>${site.t('banner_button')} ${icon('arrow', 'icon icon-arrow')}</a>
         </div>
         ${ornamentBand('banner-band')}
       </section>

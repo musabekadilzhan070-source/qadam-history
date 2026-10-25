@@ -1,7 +1,7 @@
 import { org } from './api.js';
 import { renderIcon } from '../site.js';
 import {
-  esc, icon, toast, dialog, statusBadge, input, textarea, select, toggle, fileField, bindFileFields,
+  esc, icon, toast, dialog, statusBadge, input, textarea, select, toggle,
   formValues, trackDirty, busy, moved,
 } from './ui.js';
 import { iconField, bindIconFields } from './icons.js';
@@ -122,11 +122,6 @@ export function topicsView(el, _params, ctx) {
   draw();
 }
 
-const keyPointRow = (k = { label: '', text: '' }) => `
-  <li class="o-kp"><input data-kp="label" value="${esc(k.label)}" placeholder="Дата немесе ұғым" maxlength="120" />
-    <input data-kp="text" value="${esc(k.text)}" placeholder="Түсіндірмесі" maxlength="500" />
-    <button type="button" class="o-icon-btn o-danger" data-kp-del aria-label="Жою">${icon('cross')}</button></li>`;
-
 export function topicEditView(el, [id], ctx) {
   const s = ctx.state;
   const isNew = id === 'new';
@@ -144,7 +139,6 @@ export function topicEditView(el, [id], ctx) {
       <div class="o-card-head">
         <a class="o-back" href="/organizer/topics" data-link>← Тақырыптар</a>
         <div class="o-row-actions">
-          ${!isNew && t.published ? `<a class="btn btn-ghost btn-sm" href="/topics/${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">Сайтта көру</a>` : ''}
           ${!isNew ? '<button type="button" class="btn btn-ghost btn-sm o-danger" id="del">Жою</button>' : ''}
           <button type="submit" class="btn">Сақтау</button>
         </div>
@@ -153,36 +147,15 @@ export function topicEditView(el, [id], ctx) {
         ${input({ name: 'title', label: 'Тақырып атауы', value: t.title, required: true, max: 160 })}
         ${select({ name: 'period_id', label: 'Кезең', value: t.period_id, options: s.periods.map((p) => ({ value: p.id, label: p.title })), required: true })}
         ${input({ name: 'range_label', label: 'Уақыты (мысалы: XV ғасыр)', value: t.range_label, max: 80 })}
-        ${input({ name: 'slug', label: 'Сілтеме (URL)', value: t.slug, max: 60, hint: 'Бос қалдырсаңыз, атауынан жасалады. Өзгертсеңіз, ескі сілтеме жұмыс істемейді.' })}
       </div>
-      ${textarea({ name: 'summary', label: 'Қысқаша сипаттама', value: t.summary, rows: 3, max: 600 })}
-      ${textarea({ name: 'body', label: 'Тақырып мәтіні', value: t.body, rows: 14, hint: '«## » деп басталған жол — бөлім атауы, «- » деп басталған жол — тізім. Абзацтарды бос жолмен бөліңіз.' })}
-      <div class="o-field"><span class="o-label">Есте сақтайтын деректер</span>
-        <ul class="o-kps" id="kps">${t.key_points.map(keyPointRow).join('')}</ul>
-        <button type="button" class="btn btn-ghost btn-sm" id="kp-add">+ Дерек қосу</button>
-      </div>
-      <div class="o-grid-2">
-        ${fileField({ name: 'image_id', kind: 'image', value: t.image_id, label: 'Тақырып суреті', hint: 'JPG, PNG немесе WEBP, 3 МБ дейін.' })}
-        ${iconField({ name: 'icon', label: 'Тақырып эмблемасы', value: t.icon, emblems: true })}
-      </div>
+      ${textarea({ name: 'summary', label: 'Қысқаша сипаттама (тест карточкасында көрсетіледі)', value: t.summary, rows: 3, max: 600 })}
+      ${iconField({ name: 'icon', label: 'Тақырып эмблемасы', value: t.icon, emblems: true })}
       ${toggle({ name: 'published', label: 'Оқушыларға көрсету (жариялағаннан кейін)', checked: t.published })}
     </form>`;
   const form = el.querySelector('#topic-form');
-  bindFileFields(form, ctx);
   bindIconFields(form, ctx);
   const dirty = trackDirty(form, ctx);
 
-  form.querySelector('#kp-add').addEventListener('click', () => {
-    form.querySelector('#kps').insertAdjacentHTML('beforeend', keyPointRow());
-    form.querySelector('#kps li:last-child input').focus();
-    dirty.mark();
-  });
-  form.querySelector('#kps').addEventListener('click', (e) => {
-    if (e.target.closest('[data-kp-del]')) {
-      e.target.closest('li').remove();
-      dirty.mark();
-    }
-  });
   form.querySelector('#del')?.addEventListener('click', async () => {
     if (await deleteTopic(ctx, t)) {
       dirty.clear();
@@ -197,16 +170,15 @@ export function topicEditView(el, [id], ctx) {
       form.elements.title.focus();
       return;
     }
-    const payload = {
-      ...v,
+    // The reading text, key facts and picture are no longer shown to students; earlier values are kept as they are.
+    const payload = topicPayload(t, {
+      title: v.title,
       period_id: Number(v.period_id),
-      image_id: v.image_id ? Number(v.image_id) : null,
+      range_label: v.range_label,
+      summary: v.summary,
       icon: JSON.parse(v.icon || 'null'),
-      key_points: [...form.querySelectorAll('#kps li')].map((li) => ({
-        label: li.querySelector('[data-kp="label"]').value,
-        text: li.querySelector('[data-kp="text"]').value,
-      })),
-    };
+      published: Boolean(v.published),
+    });
     busy(form.querySelector('[type="submit"]'), async () => {
       const r = isNew ? await org.post('/topics', payload) : await org.put(`/topics/${t.id}`, payload);
       dirty.clear();

@@ -855,7 +855,7 @@ orgRouter.post(
     const usable = [];
     for (const q of questions) {
       const lost = flat([q]).find((x) => x.type === 'image' && !x.image_id);
-      if (lost) errors.push({ row: lost.row, message: 'Суретпен берілетін сұрақтың суреті табылмады: «Сурет» бағанына кабинеттегі суреттің ID нөмірін жазыңыз.' });
+      if (lost) errors.push({ row: lost.row, column: 'Сурет', message: 'Суретпен берілетін сұрақтың суреті табылмады: кабинеттегі суреттің ID нөмірін жазыңыз.' });
       else usable.push(q);
     }
     errors.sort((a, b) => a.row - b.row);
@@ -866,7 +866,10 @@ orgRouter.post(
       q.duplicate = { tests: index.get(key) || [], row: seen.get(key) || null };
       if (!seen.has(key)) seen.set(key, q.row);
     }
-    res.json({ format: sheet.format, questions: usable, count: flat(usable).filter((q) => q.type !== 'context').length, errors, warnings });
+    const asked = flat(usable).filter((q) => q.type !== 'context');
+    const byType = {};
+    for (const q of asked) byType[q.type] = (byType[q.type] || 0) + 1;
+    res.json({ format: sheet.format, questions: usable, count: asked.length, by_type: byType, errors, warnings });
   }),
 );
 

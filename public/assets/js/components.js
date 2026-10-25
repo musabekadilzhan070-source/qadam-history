@@ -75,7 +75,6 @@ export function testCard(t) {
         ${t.attempts ? `<span>${t.attempts} рет тапсырылды</span>` : '<span>Әлі тапсырылмаған</span>'}
       </div>
       <div class="actions">
-        <a class="btn btn-ghost btn-sm" href="/topics/${encodeURIComponent(t.slug)}" data-link>Оқу</a>
         <a class="btn btn-sm" href="/tests/${t.id}" data-link>${t.attempts ? 'Қайта тапсыру' : 'Тестті бастау'}</a>
       </div>
     </article>`;
