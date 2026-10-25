@@ -45,7 +45,7 @@ async function signedIn(email = `u${Math.random().toString(36).slice(2, 8)}@mail
 
 test('content needs a signed-in account', async () => {
   const guest = client();
-  for (const path of ['/api/overview', '/api/periods/orta-gasyr', '/api/topics', '/api/topics/kazak-handygynyn-kuryluy', '/api/tests', '/api/tests/1']) {
+  for (const path of ['/api/overview', '/api/periods/orta-gasyr', '/api/tests', '/api/tests/1', '/api/feedback']) {
     assert.equal((await guest('GET', path)).status, 401, path);
   }
   assert.equal((await guest('GET', '/api/site')).status, 200);
@@ -62,20 +62,21 @@ test('overview counts come from the database', async () => {
   assert.ok(body.tests.length > 0);
 });
 
-test('period and topic pages resolve, unknown slugs 404, every topic has an emblem', async () => {
+test('period pages resolve, unknown slugs 404, every topic has an emblem and a test link', async () => {
   const call = await signedIn();
   const period = await call('GET', '/api/periods/orta-gasyr');
   assert.equal(period.status, 200);
   assert.ok(period.body.topics.length > 0);
   assert.ok(period.body.topics.every((t) => t.icon?.kind === 'emblem'));
-  const topic = await call('GET', `/api/topics/${period.body.topics[0].slug}`);
-  assert.equal(topic.status, 200);
-  assert.ok(topic.body.body.length > 100);
-  assert.equal(topic.body.materials, undefined);
+  assert.ok(period.body.topics.every((t) => t.first_test_id));
+  assert.equal(period.body.topics[0].body, undefined);
   assert.equal((await call('GET', '/api/periods/nope')).status, 404);
-  assert.equal((await call('GET', '/api/topics/nope')).status, 404);
-  const index = await call('GET', '/api/topics');
-  assert.ok(index.body.topics.length >= 10);
+});
+
+test('topic reading pages and materials are gone from the student API', async () => {
+  const call = await signedIn();
+  assert.equal((await call('GET', '/api/topics')).status, 404);
+  assert.equal((await call('GET', '/api/topics/kazak-handygynyn-kuryluy')).status, 404);
 });
 
 test('materials are gone from the student API', async () => {

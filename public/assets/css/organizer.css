@@ -1847,3 +1847,8 @@ textarea {
   width: 100%;
   min-width: 0;
 }
+.o-imp-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

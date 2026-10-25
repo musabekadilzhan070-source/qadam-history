@@ -52,6 +52,12 @@ async function student(email = `s${Math.random().toString(36).slice(2, 8)}@mail.
   return call;
 }
 
+/** A topic as students see it in its period's list (the reading page is gone). */
+async function topicInPeriod(call, state, topic) {
+  const period = state.periods.find((p) => p.id === topic.period_id);
+  return (await call('GET', `/api/periods/${period.slug}`)).body.topics.find((t) => t.id === topic.id) || null;
+}
+
 async function organizer() {
   const call = client();
   const res = await call('POST', '/api/org/login', { pin: '908172' });
@@ -294,8 +300,8 @@ test('emblem library: built-in emblems, own uploads, assigning to a topic', asyn
   assert.equal((await org('PUT', `/api/org/topics/${a.id}`, { ...a, icon })).status, 200);
   assert.equal((await org('PUT', `/api/org/topics/${a.id}`, { ...a, icon: { kind: 'emblem', name: 'nope' } })).status, 400);
   await org('POST', '/api/org/publish', {});
-  const pa = (await pupil('GET', `/api/topics/${a.slug}`)).body;
-  const pb = (await pupil('GET', `/api/topics/${b.slug}`)).body;
+  const pa = await topicInPeriod(pupil, st, a);
+  const pb = await topicInPeriod(pupil, st, b);
   assert.equal(pa.icon.name, 'k-shanyrak');
   assert.notEqual(pb.icon.name, 'k-shanyrak');
 
@@ -365,7 +371,7 @@ test('deleting a topic keeps or removes its tests; students keep their results',
   const kept = after.tests.find((x) => x.id === testId);
   assert.equal(kept.topic_id, null);
   await org('POST', '/api/org/publish', {});
-  assert.equal((await pupil('GET', `/api/topics/${topic.slug}`)).status, 404);
+  assert.equal(await topicInPeriod(pupil, after, topic), null);
   const results = (await pupil('GET', '/api/results')).body;
   assert.equal(results.attempts.length, 1);
 
@@ -373,7 +379,7 @@ test('deleting a topic keeps or removes its tests; students keep their results',
   const pubs = (await org('GET', '/api/org/publications')).body.publications;
   assert.equal((await org('POST', `/api/org/publications/${pubs[1].id}/restore`)).status, 200);
   await org('POST', '/api/org/publish', { note: 'қайтару' });
-  assert.equal((await pupil('GET', `/api/topics/${topic.slug}`)).status, 200);
+  assert.ok(await topicInPeriod(pupil, after, topic));
   assert.equal((await pupil('GET', '/api/results')).body.attempts.length, 1);
 });
 
@@ -392,23 +398,4 @@ test('site texts and icons reach the student side after publishing', async () =>
   assert.equal(site.icons['nav.home'].name, 'book');
   assert.equal(site.icons['nav.home'].size, 30);
   assert.equal(site.icons['period.1'].id, img.body.id);
-});
-
-test('khans and historical figures', async () => {
-  const org = await organizer();
-  const { body: st } = await org('GET', '/api/org/state');
-  const topic = st.topics.find((t) => t.published);
-  const p = await org('POST', '/api/org/persons', {
-    name: 'Абылай хан',
-    reign: '1771–1781',
-    biography: 'Өмірбаяны',
-    facts: ['Бірінші дерек', ''],
-    topic_id: topic.id,
-    published: true,
-  });
-  assert.equal(p.status, 201);
-  await org('POST', '/api/org/publish', {});
-  const page = (await (await student())('GET', `/api/topics/${topic.slug}`)).body;
-  assert.equal(page.persons.length, 1);
-  assert.deepEqual(page.persons[0].facts, ['Бірінші дерек']);
 });

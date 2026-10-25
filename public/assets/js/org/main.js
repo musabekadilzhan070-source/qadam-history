@@ -9,7 +9,6 @@ import { feedbackView } from './feedback.js';
 import { testsView, testEditView } from './tests.js';
 import { imagesView } from './images.js';
 import { iconsView } from './icons.js';
-import { personsView, personEditView } from './persons.js';
 import { siteView } from './site.js';
 import { publishView } from './publish.js';
 import { SECTIONS } from './sections.js';
@@ -27,8 +26,6 @@ const ROUTES = [
   { re: /^\/organizer\/students\/?$/, nav: 'students', view: studentsView, title: 'Оқушылар' },
   { re: /^\/organizer\/feedback\/?$/, nav: 'feedback', view: feedbackView, title: 'Келген ұсыныстар' },
   { re: /^\/organizer\/icons\/?$/, nav: 'icons', view: iconsView, title: 'Белгішелер' },
-  { re: /^\/organizer\/persons\/?$/, nav: 'persons', view: personsView, title: 'Хандар мен тұлғалар' },
-  { re: /^\/organizer\/persons\/(new|\d+)\/?$/, nav: 'persons', view: personEditView, title: 'Тұлға' },
   { re: /^\/organizer\/site\/?$/, nav: 'site', view: siteView, title: 'Сайт мазмұны' },
   { re: /^\/organizer\/publish\/?$/, nav: 'publish', view: publishView, title: 'Сақтау және жариялау' },
 ];

@@ -16,7 +16,7 @@ import {
   tokenHash,
 } from './auth.js';
 import { mailConfigured, sendMail } from './mail.js';
-import { listPeriods, getPeriod, getTopic, listTests, topicIndex, siteInfo, totals } from './content.js';
+import { listPeriods, getPeriod, listTests, siteInfo, totals } from './content.js';
 import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
@@ -92,16 +92,6 @@ app.get('/api/periods/:slug', requireUser, wrap(async (req, res) => {
   const period = await getPeriod(req.params.slug, userId(req));
   if (!period) return res.status(404).json({ error: 'Кезең табылмады.' });
   res.json(period);
-}));
-
-app.get('/api/topics', requireUser, wrap(async (_req, res) => {
-  res.json({ topics: await topicIndex() });
-}));
-
-app.get('/api/topics/:slug', requireUser, wrap(async (req, res) => {
-  const topic = await getTopic(req.params.slug, userId(req));
-  if (!topic) return res.status(404).json({ error: 'Тақырып табылмады.' });
-  res.json(topic);
 }));
 
 app.get('/api/tests', requireUser, wrap(async (req, res) => {

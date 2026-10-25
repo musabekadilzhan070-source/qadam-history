@@ -2,15 +2,15 @@ import { org } from './api.js';
 import { letter } from '../quiz-player.js';
 import { runQuiz } from '../views/quiz.js';
 import { resultHero, reviewList } from '../views/review.js';
-import { TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
+import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
 // Test builder: settings, seven question formats, checks before publishing and a student preview.
 
 const TYPE_TEXT = {
-  single: 'Оқушы бір нұсқаны таңдайды. Бір ғана дұрыс жауап.',
-  multiple: 'Бірнеше дұрыс жауап: оқушы барлығын белгілеуі керек.',
+  single: 'Оқушы ұсынылған жауаптардың ішінен тек бір дұрыс жауапты таңдайды.',
+  multiple: 'Оқушы бірнеше жауап белгілейді: барлық дұрыс жауап таңдалып, қатесі белгіленбесе ғана дұрыс.',
   image: 'Сұрақтың негізі сурет (карта, портрет, құжат). Жауап нұсқалары бар.',
   matching: 'Сол жақ пен оң жақ элементтерді жұптастыру. Оң жақ араластырылып беріледі.',
   ordering: 'Оқиғаларды хронологиялық ретке қою. Оқушыға араластырылып беріледі.',
@@ -372,9 +372,14 @@ function openBody(q, path) {
 
 function typeSelect(q, path, inContext) {
   return `<label class="o-type-select"><span class="visually-hidden">Сұрақ түрі</span>
-    <select data-change-type="${path}">${TYPES.filter((t) => !(inContext && t === 'context'))
-      .map((t) => `<option value="${t}" ${t === q.type ? 'selected' : ''}>${TYPE_ICON[t]} ${TYPE_LABELS[t]}</option>`)
-      .join('')}</select></label>`;
+    <select data-change-type="${path}">
+      <optgroup label="Негізгі түрлер">${MAIN_TYPES.map(option).join('')}</optgroup>
+      <optgroup label="Қосымша түрлер">${TYPES.filter((t) => !MAIN_TYPES.includes(t) && !(inContext && t === 'context')).map(option).join('')}</optgroup>
+    </select></label>`;
+
+  function option(t) {
+    return `<option value="${t}" ${t === q.type ? 'selected' : ''}>${TYPE_ICON[t]} ${TYPE_LABELS[t]}</option>`;
+  }
 }
 
 function questionCard(q, path, label, { first, last, inContext = false }) {
@@ -434,14 +439,18 @@ function questionCard(q, path, label, { first, last, inContext = false }) {
     </li>`;
 }
 
+const card = (t) =>
+  `<button type="button" class="o-type-card" data-type="${t}"><span class="o-type-icon">${TYPE_ICON[t]}</span><b>${TYPE_LABELS[t]}</b><small>${TYPE_TEXT[t]}</small></button>`;
+
 /** «Сұрақ түрін таңдаңыз»: resolves with a type or null. */
 function chooseType(inContext) {
   return dialog({
     title: 'Сұрақ түрін таңдаңыз',
     wide: true,
-    body: `<div class="o-type-grid">${TYPES.filter((t) => !(inContext && t === 'context'))
-      .map((t) => `<button type="button" class="o-type-card" data-type="${t}"><span class="o-type-icon">${TYPE_ICON[t]}</span><b>${TYPE_LABELS[t]}</b><small>${TYPE_TEXT[t]}</small></button>`)
-      .join('')}</div>`,
+    body: `<h3 class="o-sub">Негізгі түрлер</h3>
+      <div class="o-type-grid">${MAIN_TYPES.map(card).join('')}</div>
+      <h3 class="o-sub">Қосымша түрлер</h3>
+      <div class="o-type-grid">${TYPES.filter((t) => !MAIN_TYPES.includes(t) && !(inContext && t === 'context')).map(card).join('')}</div>`,
     onOpen(box, close) {
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-type]');

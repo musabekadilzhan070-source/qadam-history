@@ -9,7 +9,6 @@ const DESCRIPTIONS = {
   tests: 'Тест құру: 7 сұрақ түрі, уақыт пен ұпай, алдын ала қарау, жариялау.',
   images: 'Сурет жүктеу, ауыстыру, тақырыпқа байланыстыру.',
   icons: 'Мәзір белгішелері мен кезең эмблемалары.',
-  persons: 'Хандардың және тарихи тұлғалардың карточкалары.',
   site: 'Баннер, тақырыптар, батырма мәтіндері, кезеңдер.',
   publish: 'Өзгерістерді оқушыларға жариялау және бұрынғы нұсқаға қайтару.',
 };
@@ -24,7 +23,6 @@ export function dashboardView(el, _params, ctx) {
     tests: `${s.tests.length} тест · ${s.tests.reduce((n, x) => n + x.question_count, 0)} сұрақ`,
     images: `${s.files.filter((f) => f.kind === 'image').length} сурет · ${s.files.filter((f) => f.kind === 'pdf').length} PDF`,
     icons: `${Object.keys(s.icons).length} өзгертілген белгіше`,
-    persons: `${s.persons.length} тұлға`,
     site: `${Object.keys(s.texts).length} өзгертілген мәтін`,
     publish: s.status.has_unpublished ? 'Жарияланбаған өзгерістер бар' : 'Барлығы жарияланған',
   };

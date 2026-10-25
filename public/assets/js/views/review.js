@@ -31,7 +31,7 @@ export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = tr
       </ul>
       <div class="banner-actions">
         ${retry && testId ? `<a class="btn" href="/tests/${testId}" data-link data-reload>Қайта тапсыру</a>` : ''}
-        ${topicSlug ? `<a class="btn btn-ghost-light" href="/topics/${encodeURIComponent(topicSlug)}" data-link>Тақырыпқа оралу</a>` : ''}
+        ${topicSlug ? '<a class="btn btn-ghost-light" href="/tests" data-link>Барлық тесттер</a>' : ''}
       </div>
     </div>
     ${ornamentBand('band')}

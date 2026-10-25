@@ -5,7 +5,6 @@ import { loading, errorBox } from './components.js';
 import { site } from './site.js';
 import { homeView } from './views/home.js';
 import { periodsView, periodView } from './views/periods.js';
-import { topicView } from './views/topic.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
 import { resultsView, attemptView } from './views/results.js';
@@ -28,7 +27,6 @@ const ROUTES = [
   { re: /^\/periods\/([\w-]+)\/?$/, nav: 'periods', view: periodView },
   { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
-  { re: /^\/topics\/([\w-]+)\/?$/, nav: 'periods', view: topicView },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім' },
   { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі' },
@@ -42,8 +40,11 @@ const ROUTES = [
   { re: /^\/reset\/?$/, view: resetView, title: 'Жаңа құпиясөз', guest: true },
 ];
 
-// Old material links have no page any more: send them to the topics.
-const MOVED = [[/^\/materials(\/.*)?$/, '/periods']];
+// Pages that no longer exist: reading materials and topic reading pages. The site is for tests only.
+const MOVED = [
+  [/^\/materials(\/.*)?$/, '/tests'],
+  [/^\/topics\/[\w-]+\/?$/, '/tests'],
+];
 
 const view = document.getElementById('view');
 let cleanup = null;
@@ -182,12 +183,10 @@ function closeSearch() {
 
 async function loadIndex() {
   if (searchIndex) return searchIndex;
-  const { topics } = await api.get('/api/topics');
-  searchIndex = topics.map((m) => ({
-    ...m,
-    haystack: [m.title, m.summary, m.range_label, m.period_title, ...m.key_points.flatMap((k) => [k.label, k.text])]
-      .join(' ')
-      .toLocaleLowerCase('kk'),
+  const { tests } = await api.get('/api/tests');
+  searchIndex = tests.map((t) => ({
+    ...t,
+    haystack: [t.title, t.topic_title, t.period_title, t.description, t.summary].join(' ').toLocaleLowerCase('kk'),
   }));
   return searchIndex;
 }
@@ -205,10 +204,10 @@ async function runSearch() {
   const hits = items.filter((m) => words.every((w) => m.haystack.includes(w))).slice(0, 8);
   searchBox.innerHTML = hits.length
     ? hits
-        .map((m) => {
-          const fact = m.key_points.find((k) => words.some((w) => `${k.label} ${k.text}`.toLocaleLowerCase('kk').includes(w)));
-          return `<a href="/topics/${encodeURIComponent(m.slug)}" data-link><b>${esc(m.title)}</b><span>${esc(m.period_title)}${fact ? ` · ${esc(fact.label)}` : ''}</span></a>`;
-        })
+        .map(
+          (t) =>
+            `<a href="/tests/${t.id}" data-link><b>${esc(t.title)}</b><span>${esc(t.period_title)}${t.title !== t.topic_title ? ` · ${esc(t.topic_title)}` : ''} · ${t.question_count} сұрақ</span></a>`,
+        )
         .join('')
     : '<div class="search-empty">Ештеңе табылмады.</div>';
   searchBox.hidden = false;
