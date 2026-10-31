@@ -34,5 +34,5 @@ export const org = {
   put: (path, body = {}) => request('PUT', BASE + path, body),
   del: (path) => request('DELETE', BASE + path),
   /** Sends a File as the raw request body; the server checks its real type and size. */
-  upload: (path, file) => request(path.includes('/content') ? 'PUT' : 'POST', BASE + path, file, { raw: true, headers: { 'X-File-Name': encodeURIComponent(file.name || '') } }),
+  upload: (path, file, method = null) => request(method || (path.includes('/content') ? 'PUT' : 'POST'), BASE + path, file, { raw: true, headers: { 'X-File-Name': encodeURIComponent(file.name || '') } }),
 };

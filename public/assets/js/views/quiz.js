@@ -204,7 +204,7 @@ export async function quizView(el, [id], app, alive) {
       el.innerHTML = `
         <div class="quiz">
           ${auto ? '<div class="notice"><span>Уақыт аяқталды: жауаптар автоматты түрде тексерілді.</span></div>' : ''}
-          ${resultHero(r, { topicSlug: topic.slug, topicTitle: heading, testId: id })}
+          ${resultHero(r, { topicSlug: topic.slug, topicTitle: heading, testId: id, attemptId: r.attempt_id })}
           ${r.saved ? `<div class="notice"><span>Нәтиже сақталды.</span><a class="link-more" href="/results" data-link>Менің нәтижелерім ${icon('arrow')}</a></div>` : ''}
           ${reviewList(r.items)}
         </div>`;

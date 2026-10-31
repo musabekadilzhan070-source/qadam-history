@@ -9,7 +9,7 @@ async function bestByTest(userId) {
   if (!userId) return new Map();
   const rows = await all(
     `SELECT test_id, MAX(CAST(correct AS REAL) / total) AS best, COUNT(*) AS attempts
-     FROM attempts WHERE user_id = ? AND test_id IS NOT NULL GROUP BY test_id`,
+     FROM attempts WHERE user_id = ? AND test_id IS NOT NULL AND kind = 'test' GROUP BY test_id`,
     userId,
   );
   return new Map(rows.map((r) => [r.test_id, { best: Math.round(r.best * 100), attempts: r.attempts }]));
@@ -30,6 +30,8 @@ const testCard = (x, best) => {
     title: x.title,
     description: x.description || '',
     cover_image_id: x.cover_image_id ?? null,
+    grade: x.grade ?? null,
+    publisher: x.publisher || '',
     question_count: servedCount(x),
     time_limit_min: st.time_limit_min || (st.question_time_sec ? Math.ceil((st.question_time_sec * servedCount(x)) / 60) : 0),
     best_percent: b ? b.best : null,

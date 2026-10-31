@@ -187,3 +187,50 @@ test('removed game routes do not exist', async () => {
     assert.equal((await call('GET', path)).status, 404);
   }
 });
+
+test('working on mistakes serves only wrong questions and keeps the original result', async () => {
+  const student = await signedIn();
+  const id = await topicTestId(student);
+  const { body: t } = await student('GET', `/api/tests/${id}`);
+  const first = await student('POST', `/api/tests/${id}`, { answers: {}, token: t.token });
+  const right = Object.fromEntries(first.body.items.map((i) => [i.id, i.correct_option_ids]));
+  // Answer two right, the rest wrong.
+  const { body: t2 } = await student('GET', `/api/tests/${id}`);
+  const ids = t2.units.map((q) => q.id);
+  const partial = await student('POST', `/api/tests/${id}`, { answers: { [ids[0]]: right[ids[0]], [ids[1]]: right[ids[1]] }, token: t2.token });
+  assert.equal(partial.body.correct, 2);
+
+  const rw = await student('GET', `/api/results/${partial.body.attempt_id}/rework`);
+  assert.equal(rw.status, 200);
+  assert.equal(rw.body.question_count, 3);
+  assert.deepEqual(rw.body.units.map((u) => u.id).sort(), ids.slice(2).sort());
+  assert.doesNotMatch(JSON.stringify(rw.body.units), /is_correct|correct_option/);
+  // A test token is not a rework token, and a rework token is bound to its attempt.
+  assert.equal((await student('POST', `/api/results/${partial.body.attempt_id}/rework`, { answers: {}, token: t2.token })).status, 400);
+  assert.equal((await student('POST', `/api/results/${first.body.attempt_id}/rework`, { answers: {}, token: rw.body.token })).status, 400);
+
+  const done = await student('POST', `/api/results/${partial.body.attempt_id}/rework`, { answers: right, token: rw.body.token });
+  assert.equal(done.status, 200);
+  assert.equal(done.body.kind, 'rework');
+  assert.equal(done.body.total, 3);
+  assert.equal(done.body.percent, 100);
+
+  const original = await student('GET', `/api/results/${partial.body.attempt_id}`);
+  assert.equal(original.body.correct, 2);
+  assert.equal(original.body.reworks.length, 1);
+  assert.equal(original.body.can_rework, true);
+  // Nothing wrong in a perfect rework: no rework of it.
+  const again = await student('GET', `/api/results/${done.body.attempt_id}/rework`);
+  assert.equal(again.status, 400);
+  assert.match(again.body.error, /Жарайсың/);
+
+  const results = await student('GET', '/api/results');
+  assert.equal(results.body.summary.attempts, 2, 'reworks are not test attempts');
+  assert.equal(results.body.summary.reworks, 1);
+  assert.equal(results.body.attempts.length, 3, 'every attempt is kept');
+  const tests = await student('GET', '/api/tests');
+  assert.equal(tests.body.tests.find((x) => x.id === id).attempts, 2);
+
+  const other = await signedIn();
+  assert.equal((await other('GET', `/api/results/${partial.body.attempt_id}/rework`)).status, 404);
+});

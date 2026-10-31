@@ -12,7 +12,7 @@ export const initials = (name) =>
     .join('')
     .toUpperCase();
 
-const MONTHS = ['қаңтар', 'ақпан', 'наурыз', 'сәуір', 'мамыр', 'маусым', 'шілде', 'тамыз', 'қыркүйек', 'қазан', 'қараша', 'желтоқсан'];
+export const MONTHS = ['қаңтар', 'ақпан', 'наурыз', 'сәуір', 'мамыр', 'маусым', 'шілде', 'тамыз', 'қыркүйек', 'қазан', 'қараша', 'желтоқсан'];
 
 /** SQLite UTC "YYYY-MM-DD HH:MM:SS" → "21 қазан 2026, 19:40" in local time. */
 export function formatDate(value) {

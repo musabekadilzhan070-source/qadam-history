@@ -10,7 +10,9 @@ import { hashPassword, endAllSessions } from './auth.js';
 import { EMBLEM_IDS, EMBLEM_CATEGORIES } from '../public/assets/js/emblems.js';
 import { readSpreadsheet } from './sheets.js';
 import { orgFeedbackRouter } from './feedback.js';
+import { orgBooksRouter } from './books.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
+import { gradeOf, publisherOf } from './catalog.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -200,6 +202,7 @@ async function fileUsage() {
   }
   for (const x of await all('SELECT title, cover_image_id FROM tests WHERE cover_image_id IS NOT NULL')) add(x.cover_image_id, `Тест мұқабасы: ${x.title}`);
   for (const e of await all('SELECT name, file_id FROM emblems')) add(e.file_id, `Эмблема: ${e.name}`);
+  for (const b of await all('SELECT title, cover_id FROM books WHERE cover_id IS NOT NULL')) add(b.cover_id, `Кітап мұқабасы: ${b.title}`);
   const texts = await readSetting('texts', {});
   add(optId(texts.banner_image_id), 'Басты баннер');
   const icons = await readSetting('icons', {});
@@ -210,7 +213,7 @@ async function fileUsage() {
 async function draftTests() {
   const tests = await all(
     `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.description, x.cover_image_id,
-            x.settings, x.published, x.updated_at
+            x.grade, x.publisher, x.settings, x.published, x.updated_at
      FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
   );
   const questions = await all('SELECT * FROM questions WHERE test_id IS NOT NULL');
@@ -244,11 +247,12 @@ async function state() {
       live: live.has(x.id),
     })),
     persons: (await all('SELECT * FROM persons ORDER BY position, id')).map((p) => ({ ...p, facts: JSON.parse(p.facts || '[]') })),
-    files: (await all('SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files ORDER BY id DESC')).map(
+    files: (await all("SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files WHERE kind NOT IN ('bookpdf', 'pdf_upload') ORDER BY id DESC")).map(
       (f) => ({ ...f, used_by: uses.get(f.id) || [] }),
     ),
     emblems: await all('SELECT e.id, e.name, e.category, e.file_id, f.version FROM emblems e JOIN files f ON f.id = e.file_id ORDER BY e.id DESC'),
     feedback_new: (await get("SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'")).n,
+    books: await get('SELECT COUNT(*) AS total, COALESCE(SUM(published), 0) AS published FROM books'),
     texts: await readSetting('texts', {}),
     icons: await readSetting('icons', {}),
     status: await draftStatus(),
@@ -300,6 +304,11 @@ function parseQuestions(input, files) {
   return (Array.isArray(input) ? input : []).slice(0, 200).map((q, i) => one(q, `${i + 1}-сұрақ`, false));
 }
 
+const tag = (r) => {
+  if (r.error) fail(r.error);
+  return r.value;
+};
+
 async function parseTest(body) {
   const topicId = optId(body.topic_id);
   if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
@@ -311,6 +320,8 @@ async function parseTest(body) {
     title: str(body.title, 160, 'Тест атауы', { required: true }),
     description: str(body.description, 2000, 'Сипаттама'),
     cover_image_id: coverId,
+    grade: tag(gradeOf(body.grade)),
+    publisher: tag(publisherOf(body.publisher)),
     settings: settingsOf(body.settings),
     questions: parseQuestions(body.questions, files),
   };
@@ -334,8 +345,8 @@ async function writeTest(id, test) {
   let nextO = (await get("SELECT MAX(COALESCE((SELECT MAX(id) FROM options), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'options'), 0)) AS m")).m;
   const statements = [
     [
-      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
-      test.title, test.topic_id, test.description, test.cover_image_id, JSON.stringify(test.settings), id,
+      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, grade = ?, publisher = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
+      test.title, test.topic_id, test.description, test.cover_image_id, test.grade ?? null, test.publisher ?? '', JSON.stringify(test.settings), id,
     ],
   ];
   const keptQ = new Set();
@@ -788,6 +799,7 @@ orgRouter.delete(
 
 // ─── Suggestions from students (feedback.js) ─────────────────────
 orgRouter.use('/feedback', orgFeedbackRouter);
+orgRouter.use('/books', orgBooksRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });
@@ -987,7 +999,8 @@ orgRouter.get(
   wrap(async (_req, res) => {
     res.json({
       students: await all(
-        `SELECT u.id, u.username, u.email, u.display_name, u.created_at, COUNT(a.id) AS attempts
+        `SELECT u.id, u.username, u.email, u.display_name, u.created_at,
+                COALESCE(SUM(a.kind = 'test'), 0) AS attempts, COALESCE(SUM(a.kind = 'rework'), 0) AS reworks
          FROM users u LEFT JOIN attempts a ON a.user_id = u.id GROUP BY u.id ORDER BY u.id DESC LIMIT 500`,
       ),
     });
@@ -1109,6 +1122,8 @@ orgRouter.delete(
       ['UPDATE materials SET image_id = NULL WHERE image_id = ?', id],
       ['UPDATE materials SET pdf_id = NULL WHERE pdf_id = ?', id],
       ['UPDATE persons SET image_id = NULL WHERE image_id = ?', id],
+      // A book without a cover is never shown broken: it is hidden until a new cover is chosen.
+      ['UPDATE books SET cover_id = NULL, published = 0 WHERE cover_id = ?', id],
       ['UPDATE questions SET image_id = NULL WHERE image_id = ?', id],
       ['UPDATE options SET image_id = NULL WHERE image_id = ?', id],
       ["INSERT INTO settings (key, value) VALUES ('texts', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(texts)],

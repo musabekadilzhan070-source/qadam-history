@@ -85,31 +85,32 @@ export async function startTest(test) {
 
 const GRACE_SEC = 90;
 
-/** Grades a submitted test. For a signed-in student the attempt and each answer are saved. */
-export async function submitTest(test, { token, answers }, { userId }) {
+const failWith = (status, message) => Object.assign(new Error(message), { status });
+
+/** Checks the session token and the time, grades, and saves the attempt for a signed-in student. */
+async function gradeSession(test, settings, { token, answers }, { userId, reworkOf = null }) {
   const session = await readToken(token);
-  if (!session || session.t !== test.id) {
-    const e = new Error('Тест сессиясы жарамсыз. Тестті қайта бастаңыз.');
-    e.status = 400;
-    throw e;
+  if (!session || session.t !== test.id || (session.r ?? null) !== reworkOf) {
+    throw failWith(400, 'Тест сессиясы жарамсыз. Тестті қайта бастаңыз.');
   }
   const elapsed = Math.max(0, Math.round((Date.now() - session.s) / 1000));
-  const allowed = timeAllowed(test.settings, session.q.length);
+  const allowed = timeAllowed(settings, session.q.length);
   if (allowed && elapsed > allowed + GRACE_SEC) {
-    const e = new Error('Тест уақыты әлдеқашан аяқталған. Тестті қайта бастаңыз.');
-    e.status = 400;
-    throw e;
+    throw failWith(400, 'Тест уақыты әлдеқашан аяқталған. Тестті қайта бастаңыз.');
   }
-  const result = grade(test, session.q, answers, test.settings);
+  const result = grade(test, session.q, answers, settings);
   let attemptId = null;
   if (userId && result.total > 0) {
     // One write transaction: the attempt row, then its answers keyed to that row.
+    // Every attempt is a new row: a retake or a rework never changes an earlier result.
     const duration = Math.min(elapsed, 6 * 60 * 60);
     const latest = '(SELECT MAX(id) FROM attempts WHERE user_id = ?)';
     const [inserted] = await batch([
       [
-        'INSERT INTO attempts (user_id, topic_id, test_id, correct, total, score, max_score, duration_sec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        `INSERT INTO attempts (user_id, topic_id, test_id, correct, total, score, max_score, duration_sec, kind, parent_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         userId, test.topic_id, test.id, result.correct, result.total, result.score, result.max_score, duration,
+        reworkOf ? 'rework' : 'test', reworkOf,
       ],
       ...result.stored.map(({ question, answer }, i) => [
         `INSERT INTO attempt_answers (attempt_id, question_id, option_id, option_ids, answer, is_correct) VALUES (${latest}, ?, ?, ?, ?, ?)`,
@@ -125,22 +126,88 @@ export async function submitTest(test, { token, answers }, { userId }) {
   }
   return {
     attempt_id: attemptId,
+    kind: reworkOf ? 'rework' : 'test',
+    parent_id: reworkOf,
     correct: result.correct,
     total: result.total,
     score: result.score,
     max_score: result.max_score,
     percent: result.percent,
-    passed: result.percent >= test.settings.pass_percent,
-    pass_percent: test.settings.pass_percent,
+    passed: result.percent >= settings.pass_percent,
+    pass_percent: settings.pass_percent,
     duration_sec: elapsed,
     items: result.items,
   };
 }
 
+/** Grades a submitted test. For a signed-in student the attempt and each answer are saved. */
+export function submitTest(test, body, { userId }) {
+  return gradeSession(test, test.settings, body, { userId });
+}
+
+// ─── Working on mistakes ─────────────────────────────────────────
+// A rework hands out again only the questions a student answered wrongly in one of their
+// attempts, in the same formats. It is saved as its own attempt (kind 'rework', parent_id),
+// so the original result stays as it was.
+
+/** Whole-test limits do not fit a short rework: no overall timer and no question limit. */
+const reworkSettings = (settings) => ({ ...settings, time_limit_min: 0, question_limit: 0, shuffle_questions: false });
+
+/** Test questions (in the test's order) that were answered wrongly; a context keeps only its wrong children. */
+export function reworkUnits(questions, wrongIds) {
+  const units = [];
+  for (const q of questions) {
+    if (q.type === 'context') {
+      const children = q.children.filter((c) => wrongIds.has(c.id));
+      if (children.length) units.push({ ...q, children });
+    } else if (wrongIds.has(q.id)) units.push(q);
+  }
+  return units;
+}
+
+async function reworkSource(userId, attemptId) {
+  const attempt = await get('SELECT id, test_id, correct, total, score, max_score, created_at FROM attempts WHERE id = ? AND user_id = ?', attemptId, userId);
+  if (!attempt) throw failWith(404, 'Нәтиже табылмады.');
+  const wrong = new Set((await all('SELECT question_id FROM attempt_answers WHERE attempt_id = ? AND is_correct = 0', attempt.id)).map((r) => r.question_id));
+  if (!wrong.size) throw failWith(400, 'Қате жауаптар жоқ! Жарайсың!');
+  const found = attempt.test_id ? await findTest(attempt.test_id) : null;
+  if (!found) throw failWith(404, 'Бұл тест қазір оқушыларға жабық, сондықтан қателермен жұмыс істеу мүмкін емес.');
+  const units = reworkUnits(found.test.questions, wrong);
+  if (!units.length) throw failWith(400, 'Қате жауап берілген сұрақтар тесттен алынып тасталған.');
+  return { attempt, found, units, settings: reworkSettings(found.test.settings) };
+}
+
+/** Starts a rework of one of the student's attempts. */
+export async function startRework(userId, attemptId) {
+  const { attempt, found, units, settings } = await reworkSource(userId, attemptId);
+  const served = gradable(units).map((q) => q.id);
+  const token = await makeToken({ t: found.test.id, q: served, s: Date.now(), r: attempt.id });
+  return {
+    id: found.test.id,
+    title: found.test.title,
+    topic: found.topic,
+    rework_of: attempt.id,
+    original: withPercent(attempt),
+    question_count: served.length,
+    max_score: gradable(units).reduce((s, q) => s + q.points, 0),
+    time_limit_sec: timeAllowed(settings, served.length),
+    question_time_sec: settings.question_time_sec,
+    pass_percent: settings.pass_percent,
+    units: units.map((u) => forStudent(u, settings)),
+    token,
+  };
+}
+
+export async function submitRework(userId, attemptId, body) {
+  const { attempt, found, settings } = await reworkSource(userId, attemptId);
+  const result = await gradeSession(found.test, settings, body, { userId, reworkOf: attempt.id });
+  return { test: { id: found.test.id, title: found.test.title }, topic: found.topic, original: withPercent(attempt), saved: Boolean(result.attempt_id), ...result };
+}
+
 // Titles come from the draft tables so results stay readable after a test is hidden;
 // LEFT JOINs keep an attempt even if its test or topic was deleted.
 const ATTEMPT_SQL = `
-  SELECT a.id, a.test_id, a.correct, a.total, a.score, a.max_score, a.duration_sec, a.created_at,
+  SELECT a.id, a.test_id, a.kind, a.parent_id, a.correct, a.total, a.score, a.max_score, a.duration_sec, a.created_at,
          x.title AS test_title,
          t.slug AS topic_slug, COALESCE(t.title, x.title, 'Өшірілген тест') AS topic_title,
          p.slug AS period_slug, COALESCE(p.title, '') AS period_title, COALESCE(p.position, 0) AS period_number
@@ -156,16 +223,22 @@ const withPercent = (a) => ({ ...a, percent: percentOf(a) });
 
 export async function userResults(userId) {
   const attempts = (await all(`${ATTEMPT_SQL} WHERE a.user_id = ? ORDER BY a.created_at DESC, a.id DESC`, userId)).map(withPercent);
+  // Statistics of whole tests; reworks are counted on their own and do not change the average.
   const summary = await get(
     `SELECT COUNT(*) AS attempts, COUNT(DISTINCT COALESCE(test_id, -topic_id)) AS tests_done,
             COALESCE(SUM(correct), 0) AS correct, COALESCE(SUM(total), 0) AS answered
-     FROM attempts WHERE user_id = ?`,
+     FROM attempts WHERE user_id = ? AND kind = 'test'`,
     userId,
   );
+  const tests = attempts.filter((a) => a.kind !== 'rework');
+  const reworks = attempts.filter((a) => a.kind === 'rework');
   return {
     summary: {
       ...summary,
-      average_percent: attempts.length ? Math.round(attempts.reduce((s, a) => s + a.percent, 0) / attempts.length) : null,
+      average_percent: tests.length ? Math.round(tests.reduce((s, a) => s + a.percent, 0) / tests.length) : null,
+      reworks: reworks.length,
+      rework_correct: reworks.reduce((s, a) => s + a.correct, 0),
+      rework_answered: reworks.reduce((s, a) => s + a.total, 0),
     },
     attempts,
   };
@@ -212,5 +285,10 @@ export async function attemptDetail(userId, attemptId) {
   // Keep the test's own order.
   const order = [...index.keys()];
   items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  return { ...withPercent(attempt), items };
+  const reworks = (
+    await all('SELECT id, correct, total, score, max_score, created_at FROM attempts WHERE parent_id = ? AND user_id = ? ORDER BY id', attempt.id, userId)
+  ).map(withPercent);
+  const wrong = items.filter((i) => !i.is_correct).length;
+  const live = Boolean(attempt.test_id && (await published()).tests.some((x) => x.id === attempt.test_id));
+  return { ...withPercent(attempt), items, reworks, can_rework: wrong > 0 && live };
 }

@@ -15,7 +15,7 @@ export async function studentsView(el, _params, _ctx, alive) {
           .map(
             (s) => `<li class="o-row" data-id="${s.id}">
               <span class="o-row-icon">${esc(s.display_name.slice(0, 1).toUpperCase())}</span>
-              <div class="o-row-body"><b>${esc(s.display_name)}</b><small>${esc(s.email || '@' + s.username)} · ${esc(formatDate(s.created_at).split(',')[0])} · ${s.attempts} тест тапсырған</small></div>
+              <div class="o-row-body"><b>${esc(s.display_name)}</b><small>${esc(s.email || '@' + s.username)} · ${esc(formatDate(s.created_at).split(',')[0])} · ${s.attempts} тест тапсырған${s.reworks ? ` · ${s.reworks} рет қатемен жұмыс` : ''}</small></div>
               <div class="o-row-actions"><button type="button" class="btn btn-ghost btn-sm" data-reset>Уақытша құпиясөз беру</button></div>
             </li>`,
           )
