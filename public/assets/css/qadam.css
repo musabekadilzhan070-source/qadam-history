@@ -3427,6 +3427,25 @@ body.is-guest main {
   padding: 16px;
   margin-bottom: 18px;
 }
+.report-modes,
+.report-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  flex-basis: 100%;
+  min-width: 0;
+}
+.report-test {
+  display: flex;
+  flex-basis: 100%;
+  min-width: 0;
+}
+.report-test select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
 .report-note {
   flex-basis: 100%;
   margin: 0;
@@ -3434,7 +3453,7 @@ body.is-guest main {
   color: var(--text-2);
 }
 .report-preview {
-  max-width: 560px;
+  max-width: 640px;
   margin: 0 auto;
 }
 .report-preview img {
