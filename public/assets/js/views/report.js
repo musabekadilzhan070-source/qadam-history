@@ -331,7 +331,7 @@ export async function reportView(el, _params, app, alive) {
   el.innerHTML = `
     ${pageHead({ eyebrow: 'Күнделікті есеп', title: 'Кураторға есеп беру', text: 'Бүгінгі жұмысыңыз бір суретте: тесттер, қатемен жұмыс, кітаптар және белсенді уақыт. Суретті сақтап, кураторға жіберіңіз.' })}
     <div class="report-actions panel">
-      <button type="button" class="btn" data-act="download" disabled>${icon('arrow')} PNG жүктеу</button>
+      <button type="button" class="btn" data-act="download" disabled>PNG жүктеу</button>
       <button type="button" class="btn btn-dark" data-act="share" hidden disabled>Бөлісу</button>
       <button type="button" class="btn btn-ghost btn-sm" data-act="refresh" disabled>Жаңарту</button>
       <p class="report-note" data-note role="status">Есеп дайындалуда…</p>
