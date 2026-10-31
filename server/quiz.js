@@ -3,6 +3,16 @@ import { all, get, run, batch } from './db.js';
 import { published } from './publish.js';
 import { assembleQuestions, pickUnits, forStudent, grade, gradable, reviewItem, cleanAnswer, settingsOf } from './questions.js';
 
+/** The textbook a test is based on, as students see it. */
+export const textbook = (x) => ({
+  grade: x.grade ?? null,
+  publisher: x.publisher || '',
+  subject: x.subject || '',
+  book_year: x.book_year ?? null,
+  book_authors: x.book_authors || '',
+  book_pages: x.book_pages || '',
+});
+
 /** A published test with its topic, or null. */
 export async function findTest(testId) {
   const snap = await published();

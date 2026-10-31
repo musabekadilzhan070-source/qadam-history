@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc } from '../util.js';
 import { pageHead, periodChips, testCard } from '../components.js';
 import { site } from '../site.js';
-import { GRADES, PUBLISHERS, gradeLabel } from '../catalog.js';
+import { GRADES, gradeLabel } from '../catalog.js';
 
 export async function testsView(el, _params, _app, alive) {
   const { periods, tests } = await api.get('/api/tests');
@@ -12,7 +12,7 @@ export async function testsView(el, _params, _app, alive) {
   if (!periods.some((p) => p.slug === active)) active = '';
   // Grade and publisher filters appear only for values some published test really has.
   const grades = GRADES.filter((g) => tests.some((t) => t.grade === g));
-  const publishers = PUBLISHERS.filter((x) => tests.some((t) => t.publisher === x));
+  const publishers = [...new Set(tests.map((t) => t.publisher).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'kk'));
   let grade = grades.includes(Number(query.get('grade'))) ? Number(query.get('grade')) : null;
   let publisher = publishers.includes(query.get('publisher')) ? query.get('publisher') : '';
 

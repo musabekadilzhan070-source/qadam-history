@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { esc, formatDuration } from '../util.js';
 import { icon } from '../art.js';
 import { resultHero, reviewList } from './review.js';
+import { bookBox } from '../catalog.js';
 import { unitHtml, bindUnit, unitQuestions, initialAnswers, isAnswered } from '../quiz-player.js';
 
 /** Old /topics/:slug/test links open the topic's first test. */
@@ -68,6 +69,7 @@ export function runQuiz(el, { load, submit, heading, crumbs = '', onResult, app 
         <h1>${esc(heading)}</h1>
         <span class="quiz-timer${paper.time_limit_sec ? ' is-countdown' : ''}" aria-label="${paper.time_limit_sec ? 'Қалған уақыт' : 'Өткен уақыт'}">${icon('clock')}<span id="timer">${timerText()}</span></span>
       </div>
+      ${paper.book ? bookBox(paper.book) : ''}
       <div class="quiz-progress">
         <span></span>
         <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total()}"><i></i></div>
@@ -205,6 +207,7 @@ export async function quizView(el, [id], app, alive) {
         <div class="quiz">
           ${auto ? '<div class="notice"><span>Уақыт аяқталды: жауаптар автоматты түрде тексерілді.</span></div>' : ''}
           ${resultHero(r, { topicSlug: topic.slug, topicTitle: heading, testId: id, attemptId: r.attempt_id })}
+          ${bookBox(first.book)}
           ${r.saved ? `<div class="notice"><span>Нәтиже сақталды.</span><a class="link-more" href="/results" data-link>Менің нәтижелерім ${icon('arrow')}</a></div>` : ''}
           ${reviewList(r.items)}
         </div>`;

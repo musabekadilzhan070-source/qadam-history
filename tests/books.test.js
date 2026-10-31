@@ -97,7 +97,7 @@ test('books: chunked PDF upload, publishing rules, student access and cleanup', 
   assert.equal(done.status, 200);
   assert.equal(done.body.size, pdf.length);
 
-  assert.equal((await org('POST', '/api/org/books', { ...draft, grade: 5 })).status, 400);
+  assert.equal((await org('POST', '/api/org/books', { ...draft, grade: 4 })).status, 400);
   const created = await org('POST', '/api/org/books', { ...draft, published: true });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.published, true);
@@ -192,6 +192,78 @@ test('daily report: own data only, reworks apart from tests, books opened vs pag
   assert.equal((await other('GET', '/api/report/daily?day=2999-01-01')).status, 400);
   assert.equal((await client()('GET', '/api/report/daily')).status, 401);
   assert.equal((await other('POST', '/api/activity', { kind: 'book', book_id: 99999 })).status, 404);
+});
+
+test('textbook of a test: saved, kept on edit, published, shown to the student', async () => {
+  const org = await organizer();
+  const id = (await (await student())('GET', '/api/tests')).body.tests[0].id;
+  const t = (await org('GET', `/api/org/tests/${id}`)).body;
+  const book = { subject: 'Қазақстан тарихы', grade: 7, publisher: 'атамұра', book_year: 2022, book_authors: 'Қабылдинов З.Е.', book_pages: '§12–15' };
+  const saved = await org('PUT', `/api/org/tests/${id}`, { ...t, ...book });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal((await org('PUT', `/api/org/tests/${id}`, { ...t, ...book, grade: 4 })).status, 400);
+  assert.equal((await org('PUT', `/api/org/tests/${id}`, { ...t, ...book, book_year: 1200 })).status, 400);
+  // An edit of something else keeps the textbook.
+  const again = (await org('GET', `/api/org/tests/${id}`)).body;
+  assert.equal((await org('PUT', `/api/org/tests/${id}`, { ...again, title: `${again.title} ` })).status, 200);
+  const kept = (await org('GET', `/api/org/tests/${id}`)).body;
+  assert.deepEqual([kept.subject, kept.grade, kept.publisher, kept.book_year, kept.book_authors, kept.book_pages], ['Қазақстан тарихы', 7, 'Атамұра', 2022, 'Қабылдинов З.Е.', '§12–15']);
+  assert.equal((await org('POST', `/api/org/tests/${id}/publish`)).status, 200);
+
+  const s = await student();
+  const card = (await s('GET', '/api/tests')).body.tests.find((x) => x.id === id);
+  assert.equal(card.grade, 7);
+  assert.equal(card.publisher, 'Атамұра');
+  assert.equal(card.subject, 'Қазақстан тарихы');
+  const paper = (await s('GET', `/api/tests/${id}`)).body;
+  assert.deepEqual(paper.book, { grade: 7, publisher: 'Атамұра', subject: 'Қазақстан тарихы', book_year: 2022, book_authors: 'Қабылдинов З.Е.', book_pages: '§12–15' });
+});
+
+test('test report: first result is kept, last is the newest, own data only', async () => {
+  const s = await student();
+  const id = (await s('GET', '/api/tests')).body.tests[0].id;
+  assert.deepEqual((await s('GET', '/api/report/tests')).body.tests, []);
+  assert.equal((await s('GET', `/api/report/test/${id}`)).status, 404);
+  const take = async (n, items) => {
+    const t = (await s('GET', `/api/tests/${id}`)).body;
+    const answers = items ? Object.fromEntries(items.slice(0, n).map((i) => [i.id, i.correct_option_ids])) : {};
+    return (await s('POST', `/api/tests/${id}`, { token: t.token, answers })).body;
+  };
+  const first = await take(0);
+  const items = first.items;
+  // A single attempt: first = last.
+  let r = (await s('GET', `/api/report/test/${id}`)).body;
+  assert.equal(r.attempts.length, 1);
+  assert.equal(r.first.id, r.last.id);
+  assert.equal(r.change.percent_points, 0);
+  await take(items.length, items);
+  await take(2, items);
+  await s('GET', `/api/tests/${id}`); // started, never submitted: not counted
+  r = (await s('GET', `/api/report/test/${id}`)).body;
+  assert.equal(r.attempts.length, 3);
+  assert.equal(r.first.id, first.attempt_id);
+  assert.equal(r.first.percent, 0);
+  assert.equal(r.last.correct, 2);
+  assert.equal(r.change.percent_points, r.last.percent - r.first.percent);
+  assert.equal(r.change.correct, 2);
+  assert.equal(r.change.wrong, -2);
+  assert.equal(r.best_percent, 100);
+  assert.equal(r.attention.length, Math.min(8, items.length - 2));
+  // A rework is not a test attempt.
+  const rw = (await s('GET', `/api/results/${r.last.id}/rework`)).body;
+  await s('POST', `/api/results/${r.last.id}/rework`, { token: rw.token, answers: {} });
+  r = (await s('GET', `/api/report/test/${id}`)).body;
+  assert.equal(r.attempts.length, 3);
+  assert.equal(r.reworks.count, 1);
+  const list = (await s('GET', '/api/report/tests')).body.tests;
+  assert.equal(list.length, 1);
+  assert.deepEqual([list[0].test_id, list[0].attempts, list[0].first_percent, list[0].last_percent], [id, 3, 0, r.last.percent]);
+
+  const other = await student();
+  assert.equal((await other('GET', `/api/report/test/${id}`)).status, 404);
+  assert.deepEqual((await other('GET', '/api/report/tests')).body.tests, []);
+  assert.equal((await client()('GET', `/api/report/test/${id}`)).status, 401);
+  assert.equal((await client()('GET', '/api/report/tests')).status, 401);
 });
 
 test('Almaty days', async () => {

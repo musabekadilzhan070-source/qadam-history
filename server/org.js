@@ -12,7 +12,7 @@ import { readSpreadsheet } from './sheets.js';
 import { orgFeedbackRouter } from './feedback.js';
 import { orgBooksRouter } from './books.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
-import { gradeOf, publisherOf } from './catalog.js';
+import { gradeOf, publisherOf, textbookOf } from './catalog.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -213,7 +213,7 @@ async function fileUsage() {
 async function draftTests() {
   const tests = await all(
     `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.description, x.cover_image_id,
-            x.grade, x.publisher, x.settings, x.published, x.updated_at
+            x.grade, x.publisher, x.subject, x.book_year, x.book_authors, x.book_pages, x.settings, x.published, x.updated_at
      FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
   );
   const questions = await all('SELECT * FROM questions WHERE test_id IS NOT NULL');
@@ -322,6 +322,7 @@ async function parseTest(body) {
     cover_image_id: coverId,
     grade: tag(gradeOf(body.grade)),
     publisher: tag(publisherOf(body.publisher)),
+    ...tag(textbookOf(body)),
     settings: settingsOf(body.settings),
     questions: parseQuestions(body.questions, files),
   };
@@ -345,8 +346,9 @@ async function writeTest(id, test) {
   let nextO = (await get("SELECT MAX(COALESCE((SELECT MAX(id) FROM options), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'options'), 0)) AS m")).m;
   const statements = [
     [
-      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, grade = ?, publisher = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
-      test.title, test.topic_id, test.description, test.cover_image_id, test.grade ?? null, test.publisher ?? '', JSON.stringify(test.settings), id,
+      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, grade = ?, publisher = ?, subject = ?, book_year = ?, book_authors = ?, book_pages = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
+      test.title, test.topic_id, test.description, test.cover_image_id, test.grade ?? null, test.publisher ?? '',
+      test.subject ?? '', test.book_year ?? null, test.book_authors ?? '', test.book_pages ?? '', JSON.stringify(test.settings), id,
     ],
   ];
   const keptQ = new Set();

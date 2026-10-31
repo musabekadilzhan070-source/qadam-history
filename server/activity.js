@@ -1,6 +1,7 @@
 import express from 'express';
 import { all, get, run, batch } from './db.js';
 import { dayOf, secondOfDay, utcRangeOf, isDay } from './almaty.js';
+import { attemptDetail, textbook } from './quiz.js';
 
 // Active time and the daily report («Кураторға есеп беру»). Everything here is the signed-in
 // student's own data: every query is filtered by req.user.id.
@@ -173,6 +174,124 @@ reportRouter.get(
     const day = req.query.day ? String(req.query.day) : today;
     if (!isDay(day) || day > today) return res.status(400).json({ error: 'Күн қате көрсетілген.' });
     res.json(await dailyReport(req.user, day));
+  }),
+);
+
+// ─── One test: first and last result, history ─────────────────────
+// Every finished attempt is its own row (a test is saved only when it is submitted, so an
+// unfinished test never counts). The first row of a test is the first result and never changes;
+// the newest row is the last result.
+
+const attemptView = (a) => ({
+  id: a.id,
+  percent: percentOf(a),
+  correct: a.correct,
+  wrong: a.total - a.correct,
+  total: a.total,
+  score: a.score,
+  max_score: a.max_score,
+  duration_sec: a.duration_sec,
+  created_at: a.created_at,
+});
+
+/** Tests the student has finished, newest first, with their first and last percent. */
+export async function reportTests(userId) {
+  const rows = await all(
+    `SELECT a.id, a.test_id, a.correct, a.total, a.score, a.max_score, a.created_at,
+            COALESCE(x.title, 'Өшірілген тест') AS title, COALESCE(t.title, x.title, '') AS topic_title
+     FROM attempts a LEFT JOIN tests x ON x.id = a.test_id LEFT JOIN topics t ON t.id = COALESCE(x.topic_id, a.topic_id)
+     WHERE a.user_id = ? AND a.kind = 'test' AND a.test_id IS NOT NULL
+     ORDER BY a.created_at, a.id`,
+    userId,
+  );
+  const tests = new Map();
+  for (const a of rows) {
+    if (!tests.has(a.test_id)) tests.set(a.test_id, { test_id: a.test_id, title: a.title, topic_title: a.topic_title, attempts: 0, first: a });
+    const t = tests.get(a.test_id);
+    t.attempts += 1;
+    t.last = a;
+  }
+  return [...tests.values()]
+    .map((t) => ({
+      test_id: t.test_id,
+      title: t.title,
+      topic_title: t.topic_title,
+      attempts: t.attempts,
+      first_percent: percentOf(t.first),
+      last_percent: percentOf(t.last),
+      last_at: t.last.created_at,
+    }))
+    .sort((a, b) => (a.last_at < b.last_at ? 1 : -1));
+}
+
+/** First and last result of one test, every attempt in order, reworks and questions to repeat. */
+export async function testReport(user, testId) {
+  const attempts = await all(
+    `SELECT id, correct, total, score, max_score, duration_sec, created_at FROM attempts
+     WHERE user_id = ? AND test_id = ? AND kind = 'test' ORDER BY created_at, id`,
+    user.id,
+    testId,
+  );
+  if (!attempts.length) return null;
+  const test = await get(
+    `SELECT x.id, x.title, x.grade, x.publisher, x.subject, x.book_year, x.book_authors, x.book_pages,
+            COALESCE(t.title, x.title) AS topic_title, COALESCE(p.title, '') AS period_title
+     FROM tests x LEFT JOIN topics t ON t.id = x.topic_id LEFT JOIN periods p ON p.id = t.period_id WHERE x.id = ?`,
+    testId,
+  );
+  const history = attempts.map(attemptView);
+  const first = history[0];
+  const last = history[history.length - 1];
+  const reworks = await all(
+    `SELECT r.correct, r.total, r.created_at FROM attempts r JOIN attempts a ON a.id = r.parent_id
+     WHERE r.user_id = ? AND r.kind = 'rework' AND (a.test_id = ? OR r.test_id = ?) ORDER BY r.id`,
+    user.id,
+    testId,
+    testId,
+  );
+  // Questions answered wrongly in the last attempt: what the student should look at again.
+  const detail = await attemptDetail(user.id, last.id);
+  const attention = (detail?.items || [])
+    .filter((i) => !i.is_correct)
+    .slice(0, 8)
+    .map((i) => ({ text: i.context ? `${i.context.title}: ${i.text}` : i.text, answered: i.answered }));
+  return {
+    student: user.display_name,
+    generated_at: new Date().toISOString(),
+    test: { id: testId, title: test?.title || 'Өшірілген тест', topic_title: test?.topic_title || '', period_title: test?.period_title || '', ...textbook(test || {}) },
+    first,
+    last,
+    attempts: history,
+    change: {
+      percent_points: last.percent - first.percent,
+      correct: last.correct - first.correct,
+      wrong: last.wrong - first.wrong,
+    },
+    best_percent: Math.max(...history.map((a) => a.percent)),
+    average_percent: Math.round(history.reduce((s, a) => s + a.percent, 0) / history.length),
+    reworks: {
+      count: reworks.length,
+      fixed: reworks.reduce((s, r) => s + r.correct, 0),
+      total: reworks.reduce((s, r) => s + r.total, 0),
+    },
+    attention,
+  };
+}
+
+reportRouter.get(
+  '/tests',
+  wrap(async (req, res) => {
+    res.json({ tests: await reportTests(req.user.id) });
+  }),
+);
+
+reportRouter.get(
+  '/test/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const report = Number.isInteger(id) && id > 0 ? await testReport(req.user, id) : null;
+    if (!report) return res.status(404).json({ error: 'Бұл тест бойынша сіздің нәтижеңіз жоқ.' });
+    res.json(report);
   }),
 );
 

@@ -69,6 +69,10 @@ function snapshotFrom(dump) {
       // Only when set, so tests that are not tagged keep the same published version.
       ...(x.grade ? { grade: x.grade } : {}),
       ...(x.publisher ? { publisher: x.publisher } : {}),
+      ...(x.subject ? { subject: x.subject } : {}),
+      ...(x.book_year ? { book_year: x.book_year } : {}),
+      ...(x.book_authors ? { book_authors: x.book_authors } : {}),
+      ...(x.book_pages ? { book_pages: x.book_pages } : {}),
       settings: settingsOf(x.settings),
       // Questions without a correct answer (or otherwise incomplete) cannot be graded: students never get them.
       questions: readyQuestions(
