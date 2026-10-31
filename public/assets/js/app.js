@@ -8,6 +8,7 @@ import { periodsView, periodView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
 import { resultsView, attemptView } from './views/results.js';
+import { reworkView } from './views/rework.js';
 import { profileView } from './views/profile.js';
 import { feedbackView } from './views/feedback.js';
 import { welcomeView, loginView, registerView, forgotView, resetView } from './views/auth.js';
@@ -30,6 +31,7 @@ const ROUTES = [
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім' },
   { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі' },
+  { re: /^\/results\/(\d+)\/rework\/?$/, nav: 'results', view: reworkView, title: 'Қателермен жұмыс' },
   { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль' },
   { re: /^\/feedback\/?$/, nav: 'feedback', view: feedbackView, title: 'Ұсыныстар' },
   // Pages open to guests; everything else needs an account.

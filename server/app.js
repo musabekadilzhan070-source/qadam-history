@@ -17,7 +17,7 @@ import {
 } from './auth.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { listPeriods, getPeriod, listTests, siteInfo, totals } from './content.js';
-import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail } from './quiz.js';
+import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail, startRework, submitRework } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
 import { feedbackRouter } from './feedback.js';
@@ -171,6 +171,34 @@ app.get('/api/results/:id', requireUser, wrap(async (req, res) => {
   const detail = Number.isInteger(id) ? await attemptDetail(req.user.id, id) : null;
   if (!detail) return res.status(404).json({ error: 'Нәтиже табылмады.' });
   res.json(detail);
+}));
+
+// «Қателермен қайта жұмыс істеу»: only the questions answered wrongly in one of the student's own attempts.
+const attemptParam = (req) => {
+  const id = Number(req.params.id);
+  return Number.isInteger(id) && id > 0 ? id : 0;
+};
+const sendError = (res, err) => {
+  if (err.status) return res.status(err.status).json({ error: err.message });
+  throw err;
+};
+
+app.get('/api/results/:id/rework', requireUser, wrap(async (req, res) => {
+  try {
+    res.json(await startRework(req.user.id, attemptParam(req)));
+  } catch (err) {
+    sendError(res, err);
+  }
+}));
+
+app.post('/api/results/:id/rework', requireUser, wrap(async (req, res) => {
+  const answers = req.body?.answers;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return res.status(400).json({ error: 'Жауаптар жіберілмеді.' });
+  try {
+    res.json(await submitRework(req.user.id, attemptParam(req), { token: req.body?.token, answers }));
+  } catch (err) {
+    sendError(res, err);
+  }
 }));
 
 // ─── Accounts ──────────────────────────────────────────────────────

@@ -226,6 +226,9 @@ const COLUMNS = [
   ['attempt_answers', 'answer', 'TEXT'],
   ['attempt_answers', 'option_ids', 'TEXT'],
   // School grade (6–11) and textbook publisher a test follows; empty until the organizer tags it.
+  // Attempt kinds: 'test' (the whole test) or 'rework' (only the questions answered wrongly in parent_id).
+  ['attempts', 'kind', "TEXT NOT NULL DEFAULT 'test'"],
+  ['attempts', 'parent_id', 'INTEGER'],
   ['tests', 'grade', 'INTEGER'],
   ['tests', 'publisher', "TEXT NOT NULL DEFAULT ''"],
 ];

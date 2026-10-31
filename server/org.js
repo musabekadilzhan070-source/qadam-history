@@ -995,7 +995,8 @@ orgRouter.get(
   wrap(async (_req, res) => {
     res.json({
       students: await all(
-        `SELECT u.id, u.username, u.email, u.display_name, u.created_at, COUNT(a.id) AS attempts
+        `SELECT u.id, u.username, u.email, u.display_name, u.created_at,
+                COALESCE(SUM(a.kind = 'test'), 0) AS attempts, COALESCE(SUM(a.kind = 'rework'), 0) AS reworks
          FROM users u LEFT JOIN attempts a ON a.user_id = u.id GROUP BY u.id ORDER BY u.id DESC LIMIT 500`,
       ),
     });

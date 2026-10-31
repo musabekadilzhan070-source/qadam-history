@@ -18,6 +18,7 @@ export async function resultsView(el, _params, app, alive) {
       <div class="panel"><b>${summary.tests_done}</b><span>Тапсырылған тест</span></div>
       <div class="panel"><b>${summary.attempts}</b><span>Барлық әрекет</span></div>
       <div class="panel"><b>${summary.correct}/${summary.answered}</b><span>Дұрыс жауап</span></div>
+      <div class="panel"><b>${summary.reworks}</b><span>Қателермен жұмыс${summary.reworks ? ` · ${summary.rework_correct}/${summary.rework_answered} түзетілді` : ''}</span></div>
     </div>
     ${
       attempts.length
@@ -28,7 +29,7 @@ export async function resultsView(el, _params, app, alive) {
                 ${attempts
                   .map(
                     (a) => `<tr>
-                      <td><a href="/results/${a.id}" data-link>${esc(a.topic_title)}</a><span class="sub">${pad2(a.period_number)} · ${esc(a.period_title)}</span></td>
+                      <td><a href="/results/${a.id}" data-link>${esc(a.topic_title)}</a><span class="sub">${a.kind === 'rework' ? '<span class="kind-tag">Қателермен жұмыс</span> ' : ''}${pad2(a.period_number)} · ${esc(a.period_title)}</span></td>
                       <td data-label="Күні">${esc(formatDate(a.created_at))}</td>
                       <td data-label="Уақыт" class="num">${formatDuration(a.duration_sec)}</td>
                       <td><span class="num">${a.correct}/${a.total}</span> ${scoreBadge(a.percent)}</td>
@@ -50,7 +51,31 @@ export async function attemptView(el, [id], app, alive) {
   el.innerHTML = `
     <div class="quiz">
       <ol class="breadcrumb"><li><a href="/results" data-link>Менің нәтижелерім</a></li><li aria-current="page">${esc(formatDate(a.created_at))}</li></ol>
-      ${resultHero(a, { topicSlug: a.topic_slug, topicTitle: a.test_title && a.test_title !== a.topic_title ? `${a.topic_title} · ${a.test_title}` : a.topic_title, testId: a.test_id })}
+      ${resultHero(a, {
+        topicSlug: a.topic_slug,
+        topicTitle: `${a.kind === 'rework' ? 'Қателермен жұмыс · ' : ''}${a.test_title && a.test_title !== a.topic_title ? `${a.topic_title} · ${a.test_title}` : a.topic_title}`,
+        testId: a.test_id,
+        attemptId: a.id,
+        canRework: a.can_rework,
+        extra: a.kind === 'rework' && a.parent_id ? `<p class="rework-compare"><a href="/results/${a.parent_id}" data-link>Бастапқы нәтижені ашу</a></p>` : '',
+      })}
+      ${
+        a.reworks.length
+          ? `<section class="panel rework-history" aria-labelledby="rw-title">
+              <h2 id="rw-title">Қателермен жұмыс тарихы</h2>
+              <ul class="mini-list">
+                ${a.reworks
+                  .map(
+                    (w, i) => `<li><a href="/results/${w.id}" data-link>
+                      <span class="mini-num">${i + 1}</span>
+                      <span class="mini-body"><b>${w.correct} / ${w.total} қате түзетілді</b><span>${esc(formatDate(w.created_at))}</span></span>
+                      ${scoreBadge(w.percent)}</a></li>`,
+                  )
+                  .join('')}
+              </ul>
+            </section>`
+          : ''
+      }
       ${reviewList(a.items)}
     </div>`;
 }

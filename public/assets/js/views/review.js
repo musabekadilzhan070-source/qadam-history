@@ -10,7 +10,17 @@ const verdict = (p) =>
 
 const num = (n) => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
 
-export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = true }) {
+/**
+ * «Қателермен қайта жұмыс істеу» under a saved result: opens only the wrongly answered questions.
+ * With no wrong answers the student is praised instead.
+ */
+export function reworkAction(r, { attemptId, canRework = true }) {
+  if (!attemptId) return '';
+  if (r.total - r.correct === 0) return '<p class="rework-none" role="status">Қате жауаптар жоқ! Жарайсың!</p>';
+  return canRework ? `<a class="btn btn-rework" href="/results/${attemptId}/rework" data-link>Қателермен қайта жұмыс істеу</a>` : '';
+}
+
+export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = true, attemptId = null, canRework = true, title = null, extra = '' }) {
   const wrong = r.total - r.correct;
   const passed = r.pass_percent !== undefined && r.passed !== undefined;
   return `
@@ -20,7 +30,8 @@ export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = tr
     </div>
     <div>
       <p class="eyebrow">${esc(topicTitle)}</p>
-      <h1 id="result-title">${verdict(r.percent)}</h1>
+      <h1 id="result-title">${title || verdict(r.percent)}</h1>
+      ${extra}
       <ul class="result-counts">
         <li class="ok">${r.correct} дұрыс</li>
         <li class="bad">${wrong} қате</li>
@@ -30,6 +41,7 @@ export function resultHero(r, { topicSlug, topicTitle, testId = null, retry = tr
         ${passed ? `<li class="${r.passed ? 'ok' : 'bad'}">${r.passed ? 'Өтті' : 'Өтпеді'} (шегі ${r.pass_percent}%)</li>` : ''}
       </ul>
       <div class="banner-actions">
+        ${reworkAction(r, { attemptId, canRework })}
         ${retry && testId ? `<a class="btn" href="/tests/${testId}" data-link data-reload>Қайта тапсыру</a>` : ''}
         ${topicSlug ? '<a class="btn btn-ghost-light" href="/tests" data-link>Барлық тесттер</a>' : ''}
       </div>
