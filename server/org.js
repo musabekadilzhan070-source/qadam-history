@@ -10,6 +10,7 @@ import { hashPassword, endAllSessions } from './auth.js';
 import { EMBLEM_IDS, EMBLEM_CATEGORIES } from '../public/assets/js/emblems.js';
 import { readSpreadsheet } from './sheets.js';
 import { orgFeedbackRouter } from './feedback.js';
+import { orgBooksRouter } from './books.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
 import { gradeOf, publisherOf } from './catalog.js';
 
@@ -201,6 +202,7 @@ async function fileUsage() {
   }
   for (const x of await all('SELECT title, cover_image_id FROM tests WHERE cover_image_id IS NOT NULL')) add(x.cover_image_id, `Тест мұқабасы: ${x.title}`);
   for (const e of await all('SELECT name, file_id FROM emblems')) add(e.file_id, `Эмблема: ${e.name}`);
+  for (const b of await all('SELECT title, cover_id FROM books WHERE cover_id IS NOT NULL')) add(b.cover_id, `Кітап мұқабасы: ${b.title}`);
   const texts = await readSetting('texts', {});
   add(optId(texts.banner_image_id), 'Басты баннер');
   const icons = await readSetting('icons', {});
@@ -245,11 +247,12 @@ async function state() {
       live: live.has(x.id),
     })),
     persons: (await all('SELECT * FROM persons ORDER BY position, id')).map((p) => ({ ...p, facts: JSON.parse(p.facts || '[]') })),
-    files: (await all('SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files ORDER BY id DESC')).map(
+    files: (await all("SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files WHERE kind NOT IN ('bookpdf', 'pdf_upload') ORDER BY id DESC")).map(
       (f) => ({ ...f, used_by: uses.get(f.id) || [] }),
     ),
     emblems: await all('SELECT e.id, e.name, e.category, e.file_id, f.version FROM emblems e JOIN files f ON f.id = e.file_id ORDER BY e.id DESC'),
     feedback_new: (await get("SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'")).n,
+    books: await get('SELECT COUNT(*) AS total, COALESCE(SUM(published), 0) AS published FROM books'),
     texts: await readSetting('texts', {}),
     icons: await readSetting('icons', {}),
     status: await draftStatus(),
@@ -796,6 +799,7 @@ orgRouter.delete(
 
 // ─── Suggestions from students (feedback.js) ─────────────────────
 orgRouter.use('/feedback', orgFeedbackRouter);
+orgRouter.use('/books', orgBooksRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });
@@ -1118,6 +1122,8 @@ orgRouter.delete(
       ['UPDATE materials SET image_id = NULL WHERE image_id = ?', id],
       ['UPDATE materials SET pdf_id = NULL WHERE pdf_id = ?', id],
       ['UPDATE persons SET image_id = NULL WHERE image_id = ?', id],
+      // A book without a cover is never shown broken: it is hidden until a new cover is chosen.
+      ['UPDATE books SET cover_id = NULL, published = 0 WHERE cover_id = ?', id],
       ['UPDATE questions SET image_id = NULL WHERE image_id = ?', id],
       ['UPDATE options SET image_id = NULL WHERE image_id = ?', id],
       ["INSERT INTO settings (key, value) VALUES ('texts', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(texts)],

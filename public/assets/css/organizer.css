@@ -1852,3 +1852,69 @@ textarea {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ─── Books ──────────────────────────────────────────────────────── */
+.o-book-thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 58px;
+  overflow: hidden;
+  color: var(--muted);
+  background: var(--canvas);
+  border-radius: 4px 7px 7px 4px;
+}
+.o-book-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.o-book-thumb .icon {
+  width: 22px;
+  height: 22px;
+}
+.o-pdf-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.o-pdf-info .icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--red);
+}
+.o-pdf-info span {
+  display: grid;
+  min-width: 0;
+}
+.o-pdf-info b {
+  overflow-wrap: anywhere;
+}
+.o-pdf-info small {
+  color: var(--muted);
+}
+.o-upload-progress {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+.o-upload-progress > div {
+  height: 8px;
+  overflow: hidden;
+  background: var(--canvas);
+  border-radius: 99px;
+}
+.o-upload-progress i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--red);
+  transition: width 0.2s;
+}
+.o-upload-progress span {
+  font-size: 13px;
+  color: var(--text-2);
+}

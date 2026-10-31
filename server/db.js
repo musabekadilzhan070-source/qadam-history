@@ -195,6 +195,63 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id, id);
 CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status, id);
 
+-- «Кітаптар»: textbooks with a cover (files.kind 'image') and a PDF (files.kind 'bookpdf').
+-- Not content: they are published one by one with their own flag, never through the snapshot.
+CREATE TABLE IF NOT EXISTS books (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT 'Қазақстан тарихы',
+  grade INTEGER,
+  publisher TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  cover_id INTEGER,
+  pdf_id INTEGER,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0,
+  published INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Large files are kept in 1 MB pieces (a request on Vercel carries at most 4.5 MB).
+CREATE TABLE IF NOT EXISTS file_chunks (
+  file_id INTEGER NOT NULL,
+  idx INTEGER NOT NULL,
+  data BLOB NOT NULL,
+  PRIMARY KEY (file_id, idx)
+);
+CREATE TABLE IF NOT EXISTS book_files (
+  file_id INTEGER PRIMARY KEY,
+  page_count INTEGER NOT NULL DEFAULT 0
+);
+-- Where each student stopped in each book.
+CREATE TABLE IF NOT EXISTS book_progress (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id INTEGER NOT NULL,
+  last_page INTEGER NOT NULL DEFAULT 1,
+  opened_count INTEGER NOT NULL DEFAULT 0,
+  last_opened_at TEXT,
+  PRIMARY KEY (user_id, book_id)
+);
+-- Days (Asia/Almaty) on which a student opened a book.
+CREATE TABLE IF NOT EXISTS book_days (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, book_id, day)
+);
+-- Active time: one row per 15-second slot of an Almaty day in which the student was active.
+-- The key makes two open tabs count once.
+CREATE TABLE IF NOT EXISTS activity_slots (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'site',
+  book_id INTEGER,
+  page INTEGER,
+  PRIMARY KEY (user_id, day, slot)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tests_topic ON tests(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_materials_topic ON materials(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_persons_topic ON persons(topic_id, position);

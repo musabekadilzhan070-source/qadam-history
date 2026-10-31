@@ -1,0 +1,2 @@
+pdf.js 5.7.284 (pdfjs-dist, legacy build), Apache-2.0 — https://github.com/mozilla/pdf.js
+Copied unchanged from the npm package so the book reader works under the site CSP (script-src self) without a CDN.
