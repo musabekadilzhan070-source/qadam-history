@@ -225,6 +225,9 @@ const COLUMNS = [
   ['attempts', 'max_score', 'REAL'],
   ['attempt_answers', 'answer', 'TEXT'],
   ['attempt_answers', 'option_ids', 'TEXT'],
+  // School grade (6–11) and textbook publisher a test follows; empty until the organizer tags it.
+  ['tests', 'grade', 'INTEGER'],
+  ['tests', 'publisher', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 async function addMissingColumns() {

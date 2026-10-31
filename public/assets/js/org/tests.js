@@ -3,6 +3,7 @@ import { letter } from '../quiz-player.js';
 import { runQuiz } from '../views/quiz.js';
 import { resultHero, reviewList } from '../views/review.js';
 import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
+import { GRADES, PUBLISHERS, gradeLabel, tagLine } from '../catalog.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
@@ -180,7 +181,7 @@ export function testsView(el, _params, ctx) {
                         </div>
                         <span class="o-row-icon">${icon('tests')}</span>
                         <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
-                          <small>${x.question_count} сұрақ${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small></div>
+                          <small>${x.question_count} сұрақ${x.grade || x.publisher ? ` · ${esc(tagLine(x).replace(/^[^·]+· /, ''))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small></div>
                         ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
                         <div class="o-row-actions">
                           <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
@@ -262,6 +263,10 @@ function settingsCard(test, ctx) {
       <div class="o-grid-2">
         <label class="o-field"><span class="o-label">Тест атауы <i>*</i></span><input maxlength="160" name="title" value="${esc(test.title)}" /></label>
         ${select({ name: 'topic_id', label: 'Тақырып', value: test.topic_id, options: topicOptions(ctx.state, { empty: '— Тақырыпты таңдаңыз —' }), required: true }).replace('<select ', '<select data-type="id" ')}
+      </div>
+      <div class="o-grid-2">
+        ${select({ name: 'grade', label: 'Сынып', value: test.grade ?? '', options: [{ value: '', label: '— Таңдалмаған —' }, ...GRADES.map((g) => ({ value: g, label: gradeLabel(g) }))] }).replace('<select ', '<select data-type="id" ')}
+        ${select({ name: 'publisher', label: 'Баспа', value: test.publisher || '', options: [{ value: '', label: '— Таңдалмаған —' }, ...PUBLISHERS.map((x) => ({ value: x, label: x }))] })}
       </div>
       <label class="o-field"><span class="o-label">Сипаттама</span><textarea name="description" rows="2" maxlength="2000" placeholder="Тест не туралы, кімге арналған">${esc(test.description || '')}</textarea></label>
       ${fileField({ name: 'cover_image_id', kind: 'image', value: test.cover_image_id, label: 'Мұқаба суреті (міндетті емес)', hint: 'Тест картасының үстінде көрсетіледі.' })}
@@ -466,6 +471,8 @@ const payload = (test) => ({
   topic_id: test.topic_id,
   description: test.description,
   cover_image_id: test.cover_image_id,
+  grade: test.grade ?? null,
+  publisher: test.publisher || '',
   settings: test.settings,
   questions: test.questions,
 });

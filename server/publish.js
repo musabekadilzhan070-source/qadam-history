@@ -66,6 +66,9 @@ function snapshotFrom(dump) {
       title: x.title,
       description: x.description || '',
       cover_image_id: x.cover_image_id ?? null,
+      // Only when set, so tests that are not tagged keep the same published version.
+      ...(x.grade ? { grade: x.grade } : {}),
+      ...(x.publisher ? { publisher: x.publisher } : {}),
       settings: settingsOf(x.settings),
       // Questions without a correct answer (or otherwise incomplete) cannot be graded: students never get them.
       questions: readyQuestions(

@@ -1,6 +1,7 @@
 import { esc, pad2, scoreBadge } from './util.js';
 import { icon, ornamentBand, ROMAN } from './art.js';
 import { site, renderIcon, fileUrl } from './site.js';
+import { tagLine } from './catalog.js';
 
 /** Period card in the original QADAM style: dark field, red line art, big number, red button. */
 export function periodCard(p) {
@@ -66,6 +67,7 @@ export function testCard(t) {
         <span class="period-tag">${t.topic_icon ? renderIcon(t.topic_icon, null, 'icon test-emblem') : ''}<i>${pad2(t.period_number)}</i>${esc(t.period_title)}</span>
         ${t.best_percent !== null ? scoreBadge(t.best_percent) : ''}
       </div>
+      ${tagLine(t) ? `<p class="test-tags">${esc(tagLine(t))}</p>` : ''}
       <h3>${esc(t.title)}</h3>
       ${t.title !== t.topic_title ? `<p class="range">${esc(t.topic_title)}</p>` : ''}
       <p>${esc(t.description || t.summary)}</p>

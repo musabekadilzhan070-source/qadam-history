@@ -11,6 +11,7 @@ import { EMBLEM_IDS, EMBLEM_CATEGORIES } from '../public/assets/js/emblems.js';
 import { readSpreadsheet } from './sheets.js';
 import { orgFeedbackRouter } from './feedback.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
+import { gradeOf, publisherOf } from './catalog.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -210,7 +211,7 @@ async function fileUsage() {
 async function draftTests() {
   const tests = await all(
     `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.description, x.cover_image_id,
-            x.settings, x.published, x.updated_at
+            x.grade, x.publisher, x.settings, x.published, x.updated_at
      FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
   );
   const questions = await all('SELECT * FROM questions WHERE test_id IS NOT NULL');
@@ -300,6 +301,11 @@ function parseQuestions(input, files) {
   return (Array.isArray(input) ? input : []).slice(0, 200).map((q, i) => one(q, `${i + 1}-сұрақ`, false));
 }
 
+const tag = (r) => {
+  if (r.error) fail(r.error);
+  return r.value;
+};
+
 async function parseTest(body) {
   const topicId = optId(body.topic_id);
   if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
@@ -311,6 +317,8 @@ async function parseTest(body) {
     title: str(body.title, 160, 'Тест атауы', { required: true }),
     description: str(body.description, 2000, 'Сипаттама'),
     cover_image_id: coverId,
+    grade: tag(gradeOf(body.grade)),
+    publisher: tag(publisherOf(body.publisher)),
     settings: settingsOf(body.settings),
     questions: parseQuestions(body.questions, files),
   };
@@ -334,8 +342,8 @@ async function writeTest(id, test) {
   let nextO = (await get("SELECT MAX(COALESCE((SELECT MAX(id) FROM options), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'options'), 0)) AS m")).m;
   const statements = [
     [
-      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
-      test.title, test.topic_id, test.description, test.cover_image_id, JSON.stringify(test.settings), id,
+      "UPDATE tests SET title = ?, topic_id = ?, description = ?, cover_image_id = ?, grade = ?, publisher = ?, settings = ?, updated_at = datetime('now') WHERE id = ?",
+      test.title, test.topic_id, test.description, test.cover_image_id, test.grade ?? null, test.publisher ?? '', JSON.stringify(test.settings), id,
     ],
   ];
   const keptQ = new Set();
