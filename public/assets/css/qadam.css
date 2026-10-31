@@ -3405,6 +3405,77 @@ body.is-guest main {
   gap: 10px;
   margin-top: 14px;
 }
+/* Controls of the other layout are hidden with the hidden attribute; display rules must not undo it. */
+.reader [hidden] {
+  display: none !important;
+}
+/* Paged layout: one page, or two side by side, fitted to the screen. */
+.reader-spreadrow {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 12px;
+  vertical-align: top;
+}
+.reader-spread[aria-pressed='true'] {
+  color: var(--white);
+  background: var(--ink, #131315);
+}
+.reader-spread {
+  min-width: 64px;
+  font-size: 13px;
+}
+/* Scroll layout (phone, portrait tablet): every page full width, one under another. */
+.reader[data-mode='scroll'] .reader-stage {
+  overflow: visible;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+.reader-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reader-pg {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  overflow: hidden;
+  background: var(--white);
+  box-shadow: 0 1px 6px rgb(10 10 12 / 0.12);
+}
+.reader-stage .reader-pg canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  box-shadow: none;
+}
+.reader-pg-n {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.reader-float {
+  display: none;
+}
+.reader[data-mode='scroll'] .reader-float.is-on {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h, 64px) + env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 20;
+  display: block;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--white);
+  background: rgb(19 19 21 / 0.82);
+  border-radius: 999px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 @media (max-width: 640px) {
   /* On a phone the bar scrolls away so the page gets the screen; the buttons under the page turn it too. */
   .reader-bar {
