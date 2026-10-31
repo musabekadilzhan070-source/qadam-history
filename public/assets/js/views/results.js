@@ -13,6 +13,8 @@ export async function resultsView(el, _params, app, alive) {
       title: 'Менің нәтижелерім',
       text: 'Тапсырған тесттеріңіздің тарихы. Кез келген нәтижені ашып, жауаптарыңызды қайта қарай аласыз.',
     })}
+    <div class="notice report-cta"><span><b>Кураторға есеп беру.</b> Бүгінгі тесттер, қатемен жұмыс, оқылған кітаптар және белсенді уақыт бір PNG суретте.</span>
+      <a class="btn btn-sm" href="/report" data-link>Кураторға есеп беру</a></div>
     <div class="summary-grid">
       <div class="panel"><b>${summary.average_percent ?? '—'}${summary.average_percent !== null ? '%' : ''}</b><span>Орташа нәтиже</span></div>
       <div class="panel"><b>${summary.tests_done}</b><span>Тапсырылған тест</span></div>

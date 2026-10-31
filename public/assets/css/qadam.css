@@ -3414,3 +3414,33 @@ body.is-guest main {
     max-width: none;
   }
 }
+
+/* ─── Daily report ───────────────────────────────────────────────── */
+.report-cta b {
+  font-weight: 800;
+}
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.report-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.report-preview {
+  max-width: 560px;
+  margin: 0 auto;
+}
+.report-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}

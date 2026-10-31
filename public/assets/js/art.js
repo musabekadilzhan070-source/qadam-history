@@ -5,7 +5,7 @@ const svg = (viewBox, body, cls = '') =>
   `<svg class="${cls}" viewBox="${viewBox}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 
 // Қошқар мүйіз: one ram-horn pair, the base unit of the ornament band.
-const HORN = 'M20 24V15C20 7 28 3 34 6C39 9 38 16 33 16C30 16 29.5 12.5 32 12M20 15C20 7 12 3 6 6C1 9 2 16 7 16C10 16 10.5 12.5 8 12';
+export const HORN = 'M20 24V15C20 7 28 3 34 6C39 9 38 16 33 16C30 16 29.5 12.5 32 12M20 15C20 7 12 3 6 6C1 9 2 16 7 16C10 16 10.5 12.5 8 12';
 
 export const ornamentMark = (cls = '') => svg('0 0 40 26', `<path d="${HORN}" stroke-width="2.6"/>`, cls);
 

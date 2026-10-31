@@ -12,6 +12,7 @@ import { resultsView, attemptView } from './views/results.js';
 import { reworkView } from './views/rework.js';
 import { booksView } from './views/books.js';
 import { readerView } from './views/reader.js';
+import { reportView } from './views/report.js';
 import { profileView } from './views/profile.js';
 import { feedbackView } from './views/feedback.js';
 import { welcomeView, loginView, registerView, forgotView, resetView } from './views/auth.js';
@@ -35,6 +36,7 @@ const ROUTES = [
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/books\/(\d+)\/?$/, nav: 'books', view: readerView, title: 'Кітап', reader: true },
+  { re: /^\/report\/?$/, nav: 'results', view: reportView, title: 'Кураторға есеп беру' },
   { re: /^\/results\/?$/, nav: 'results', view: resultsView, title: 'Менің нәтижелерім' },
   { re: /^\/results\/(\d+)\/?$/, nav: 'results', view: attemptView, title: 'Тест нәтижесі' },
   { re: /^\/results\/(\d+)\/rework\/?$/, nav: 'results', view: reworkView, title: 'Қателермен жұмыс' },
@@ -169,8 +171,9 @@ async function render() {
 // Internal links go through the router.
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
-  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (!a || a.hasAttribute('download') || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const url = new URL(a.href, location.href);
+  if (!/^https?:$/.test(url.protocol)) return;
   if (url.origin !== location.origin || a.target || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/api/') || url.pathname.startsWith('/organizer')) return;
   e.preventDefault();
   if (app.guard && !app.guard()) return;
