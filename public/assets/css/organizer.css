@@ -1918,3 +1918,28 @@ textarea {
   font-size: 13px;
   color: var(--text-2);
 }
+
+/* ─── Textbook of a test ─────────────────────────────────────────── */
+.o-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.o-book-fields {
+  min-width: 0;
+  margin: 6px 0 18px;
+  padding: 16px 18px 4px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+}
+.o-book-fields legend {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.o-book-fields > p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}

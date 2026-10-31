@@ -3,7 +3,7 @@ import { letter } from '../quiz-player.js';
 import { runQuiz } from '../views/quiz.js';
 import { resultHero, reviewList } from '../views/review.js';
 import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
-import { GRADES, PUBLISHERS, gradeLabel, tagLine } from '../catalog.js';
+import { GRADES, PUBLISHERS, SUBJECT, gradeLabel, tagLine } from '../catalog.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
@@ -181,7 +181,7 @@ export function testsView(el, _params, ctx) {
                         </div>
                         <span class="o-row-icon">${icon('tests')}</span>
                         <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
-                          <small>${x.question_count} сұрақ${x.grade || x.publisher ? ` · ${esc(tagLine(x).replace(/^[^·]+· /, ''))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small></div>
+                          <small>${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small></div>
                         ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
                         <div class="o-row-actions">
                           <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
@@ -264,10 +264,22 @@ function settingsCard(test, ctx) {
         <label class="o-field"><span class="o-label">Тест атауы <i>*</i></span><input maxlength="160" name="title" value="${esc(test.title)}" /></label>
         ${select({ name: 'topic_id', label: 'Тақырып', value: test.topic_id, options: topicOptions(ctx.state, { empty: '— Тақырыпты таңдаңыз —' }), required: true }).replace('<select ', '<select data-type="id" ')}
       </div>
-      <div class="o-grid-2">
-        ${select({ name: 'grade', label: 'Сынып', value: test.grade ?? '', options: [{ value: '', label: '— Таңдалмаған —' }, ...GRADES.map((g) => ({ value: g, label: gradeLabel(g) }))] }).replace('<select ', '<select data-type="id" ')}
-        ${select({ name: 'publisher', label: 'Баспа', value: test.publisher || '', options: [{ value: '', label: '— Таңдалмаған —' }, ...PUBLISHERS.map((x) => ({ value: x, label: x }))] })}
-      </div>
+      <fieldset class="o-book-fields">
+        <legend>Тестке пайдаланылған оқулық</legend>
+        <p class="o-muted">Оқушы тест картасында «Пән | Сынып | Баспа» жолын, тестті ашқанда толық мәліметті көреді. Жыл, авторлар және беттер міндетті емес.</p>
+        <div class="o-grid-3">
+          <label class="o-field"><span class="o-label">Пән</span><input name="subject" maxlength="120" list="o-subjects" value="${esc(test.subject || '')}" placeholder="${esc(SUBJECT)}" /></label>
+          ${select({ name: 'grade', label: 'Сынып', value: test.grade ?? '', options: [{ value: '', label: '— Таңдалмаған —' }, ...GRADES.map((g) => ({ value: g, label: gradeLabel(g) }))] }).replace('<select ', '<select data-type="id" ')}
+          <label class="o-field"><span class="o-label">Баспа</span><input name="publisher" maxlength="80" list="o-publishers" value="${esc(test.publisher || '')}" placeholder="Атамұра, Мектеп…" /></label>
+        </div>
+        <div class="o-grid-3">
+          <label class="o-field"><span class="o-label">Шыққан жылы</span><input name="book_year" type="number" min="1950" max="2100" step="1" inputmode="numeric" value="${test.book_year ?? ''}" placeholder="2022" /></label>
+          <label class="o-field"><span class="o-label">Авторлары</span><input name="book_authors" maxlength="300" value="${esc(test.book_authors || '')}" placeholder="Мысалы: Қабылдинов З., Төлеубаев Ә." /></label>
+          <label class="o-field"><span class="o-label">Беттер немесе тақырыптар</span><input name="book_pages" maxlength="300" value="${esc(test.book_pages || '')}" placeholder="Мысалы: 45–58-беттер, § 12–14" /></label>
+        </div>
+        <datalist id="o-subjects"><option value="${esc(SUBJECT)}"></option><option value="Дүниежүзі тарихы"></option><option value="Құқық негіздері"></option></datalist>
+        <datalist id="o-publishers">${PUBLISHERS.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      </fieldset>
       <label class="o-field"><span class="o-label">Сипаттама</span><textarea name="description" rows="2" maxlength="2000" placeholder="Тест не туралы, кімге арналған">${esc(test.description || '')}</textarea></label>
       ${fileField({ name: 'cover_image_id', kind: 'image', value: test.cover_image_id, label: 'Мұқаба суреті (міндетті емес)', hint: 'Тест картасының үстінде көрсетіледі.' })}
       <div class="o-grid-4">
@@ -473,6 +485,10 @@ const payload = (test) => ({
   cover_image_id: test.cover_image_id,
   grade: test.grade ?? null,
   publisher: test.publisher || '',
+  subject: test.subject || '',
+  book_year: test.book_year || null,
+  book_authors: test.book_authors || '',
+  book_pages: test.book_pages || '',
   settings: test.settings,
   questions: test.questions,
 });

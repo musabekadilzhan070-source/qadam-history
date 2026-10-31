@@ -288,6 +288,11 @@ const COLUMNS = [
   ['attempts', 'parent_id', 'INTEGER'],
   ['tests', 'grade', 'INTEGER'],
   ['tests', 'publisher', "TEXT NOT NULL DEFAULT ''"],
+  // The rest of the textbook a test is based on (all optional).
+  ['tests', 'subject', "TEXT NOT NULL DEFAULT ''"],
+  ['tests', 'book_year', 'INTEGER'],
+  ['tests', 'book_authors', "TEXT NOT NULL DEFAULT ''"],
+  ['tests', 'book_pages', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 async function addMissingColumns() {

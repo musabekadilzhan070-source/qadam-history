@@ -17,7 +17,7 @@ import {
 } from './auth.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { listPeriods, getPeriod, listTests, siteInfo, totals } from './content.js';
-import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail, startRework, submitRework } from './quiz.js';
+import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail, startRework, submitRework, textbook } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
 import { feedbackRouter } from './feedback.js';
@@ -135,7 +135,7 @@ app.get('/api/tests/:id', requireUser, wrap(async (req, res) => {
   const found = testId(req) && (await findTest(testId(req)));
   if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
   const { test, topic } = found;
-  res.json({ id: test.id, title: test.title, description: test.description, cover_image_id: test.cover_image_id, topic, ...(await startTest(test)) });
+  res.json({ id: test.id, title: test.title, description: test.description, cover_image_id: test.cover_image_id, topic, book: textbook(test), ...(await startTest(test)) });
 }));
 
 app.post('/api/tests/:id', requireUser, wrap(async (req, res) => {

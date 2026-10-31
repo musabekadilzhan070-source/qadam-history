@@ -97,7 +97,7 @@ test('books: chunked PDF upload, publishing rules, student access and cleanup', 
   assert.equal(done.status, 200);
   assert.equal(done.body.size, pdf.length);
 
-  assert.equal((await org('POST', '/api/org/books', { ...draft, grade: 5 })).status, 400);
+  assert.equal((await org('POST', '/api/org/books', { ...draft, grade: 4 })).status, 400);
   const created = await org('POST', '/api/org/books', { ...draft, published: true });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.published, true);
