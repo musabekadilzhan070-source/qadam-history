@@ -23,6 +23,7 @@ import { orgRouter } from './org.js';
 import { feedbackRouter } from './feedback.js';
 import { booksRouter } from './books.js';
 import { activityRouter, reportRouter, purgeOldActivity } from './activity.js';
+import { publicLinksRouter } from './links.js';
 import { seedIfEmpty } from './seed.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
@@ -135,7 +136,7 @@ app.get('/api/tests/:id', requireUser, wrap(async (req, res) => {
   const found = testId(req) && (await findTest(testId(req)));
   if (!found) return res.status(404).json({ error: 'Тест табылмады.' });
   const { test, topic } = found;
-  res.json({ id: test.id, title: test.title, description: test.description, cover_image_id: test.cover_image_id, topic, book: textbook(test), ...(await startTest(test)) });
+  res.json({ id: test.id, title: test.title, description: test.description, cover_image_id: test.cover_image_id, topic, book: textbook(test), ...(await startTest(test, userId(req))) });
 }));
 
 app.post('/api/tests/:id', requireUser, wrap(async (req, res) => {
@@ -163,6 +164,8 @@ app.get('/api/topics/:slug/test', requireUser, wrap(async (req, res) => {
 
 // ─── Organizer cabinet ─────────────────────────────────────────────
 app.use('/api/org', orgRouter);
+// A test sent as a link: taken without an account (links.js).
+app.use('/api/link', publicLinksRouter);
 app.use('/api/feedback', requireUser, feedbackRouter);
 app.use('/api/books', requireUser, booksRouter);
 app.use('/api/activity', requireUser, activityRouter);

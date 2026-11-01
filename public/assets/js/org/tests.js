@@ -5,6 +5,7 @@ import { resultHero, reviewList } from '../views/review.js';
 import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testProblems } from '../question-rules.js';
 import { GRADES, PUBLISHERS, SUBJECT, gradeLabel, tagLine } from '../catalog.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
+import { copyLink, linkUrl, mountLinkCard } from './links.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
 // Test builder: settings, seven question formats, checks before publishing and a student preview.
@@ -181,7 +182,16 @@ export function testsView(el, _params, ctx) {
                         </div>
                         <span class="o-row-icon">${icon('tests')}</span>
                         <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
-                          <small>${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small></div>
+                          <small>${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small>
+                          ${
+                            x.share_id
+                              ? `<div class="o-link-line"><span class="o-badge ${x.link_enabled ? 'o-badge-on' : 'o-badge-off'}">${x.link_enabled ? 'Сілтеме қосулы' : 'Сілтеме өшірулі'}</span>
+                                  <a class="btn btn-ghost btn-sm" href="/t/${esc(x.share_id)}" target="_blank" rel="noopener">Тестті ашу</a>
+                                  <button type="button" class="btn btn-ghost btn-sm" data-act="copy-link">Сілтемені көшіру</button>
+                                  <button type="button" class="btn btn-ghost btn-sm" data-act="link-toggle" aria-pressed="${x.link_enabled}">${x.link_enabled ? 'Сілтеме арқылы тапсыруды өшіру' : 'Сілтеме арқылы тапсыру'}</button>
+                                  <a class="btn btn-ghost btn-sm" href="/organizer/links?test=${x.id}" data-link>Нәтижелерді көру</a></div>`
+                              : ''
+                          }</div>
                         ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
                         <div class="o-row-actions">
                           <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
@@ -227,6 +237,11 @@ export function testsView(el, _params, ctx) {
         toast(`Көшірме жасалды: «${copy.title}». Ол жасырын күйде.`);
       } else if (act === 'delete') {
         if (!(await deleteTest(ctx, x))) return;
+      } else if (act === 'copy-link') {
+        if (!(await copyLink(x.id, x.share_id, x.link_enabled))) return;
+      } else if (act === 'link-toggle') {
+        await org.put(`/links/${x.id}`, { enabled: !x.link_enabled });
+        toast(x.link_enabled ? 'Сілтеме өшірілді: жаңа тапсыру басталмайды.' : `Сілтеме қосылды: ${linkUrl(x.share_id)}`);
       }
       await ctx.reload();
       draw();
@@ -536,6 +551,7 @@ export async function testEditView(el, [id], ctx, alive) {
   if (!alive()) return;
   let dirty = false;
   ctx.setDirtyCheck(() => dirty);
+  const linkCache = {};
 
   const draw = () => {
     const problems = testProblems(test);
@@ -567,6 +583,7 @@ export async function testEditView(el, [id], ctx, alive) {
         }
       </div>
       ${settingsCard(test, ctx)}
+      <div data-link-card></div>
       <ol class="o-questions">${test.questions
         .map((q, i, all) => questionCard(q, `questions.${i}`, q.type === 'context' ? `${i + 1}-блок` : `${i + 1}-сұрақ`, { first: i === 0, last: i === all.length - 1 }))
         .join('')}</ol>
@@ -578,6 +595,9 @@ export async function testEditView(el, [id], ctx, alive) {
       </div>`;
     bindFileFields(el, ctx);
     document.getElementById('o-title').textContent = test.title || 'Тест';
+    const holder = el.querySelector('[data-link-card]');
+    holder.dataset.dirty = dirty ? '1' : '';
+    mountLinkCard(holder, test.id, linkCache, { dirty }).catch((err) => toast(err.message, 'error'));
   };
 
   const redraw = (focus) => {

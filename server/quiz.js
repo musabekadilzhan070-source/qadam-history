@@ -87,9 +87,12 @@ export function studentPaper(test, settings) {
   };
 }
 
-export async function startTest(test) {
+export async function startTest(test, userId = null) {
   const paper = studentPaper(test, test.settings);
-  const token = await makeToken({ t: test.id, q: paper.served, s: Date.now() });
+  // A started test is noted, so the report can tell tests left unfinished from finished ones.
+  const nonce = crypto.randomBytes(12).toString('base64url');
+  if (userId) await run('INSERT INTO test_starts (nonce, user_id, test_id) VALUES (?, ?, ?)', nonce, userId, test.id);
+  const token = await makeToken({ t: test.id, q: paper.served, s: Date.now(), n: nonce });
   return { ...paper.meta, units: paper.units, token };
 }
 
@@ -133,6 +136,9 @@ async function gradeSession(test, settings, { token, answers }, { userId, rework
       ]),
     ]);
     attemptId = inserted.lastInsertRowid;
+    if (session.n && !reworkOf) {
+      await run('UPDATE test_starts SET attempt_id = ? WHERE nonce = ? AND user_id = ? AND attempt_id IS NULL', attemptId, session.n, userId);
+    }
   }
   return {
     attempt_id: attemptId,

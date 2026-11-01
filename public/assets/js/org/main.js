@@ -9,6 +9,7 @@ import { feedbackView } from './feedback.js';
 import { testsView, testEditView } from './tests.js';
 import { imagesView } from './images.js';
 import { booksView, bookEditView } from './books.js';
+import { linksView } from './links.js';
 import { iconsView } from './icons.js';
 import { siteView } from './site.js';
 import { publishView } from './publish.js';
@@ -22,6 +23,7 @@ const ROUTES = [
   { re: /^\/organizer\/topics\/(new|\d+)\/?$/, nav: 'topics', view: topicEditView, title: 'Тақырып' },
   { re: /^\/organizer\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/organizer\/tests\/(\d+)\/?$/, nav: 'tests', view: testEditView, title: 'Тест' },
+  { re: /^\/organizer\/links\/?$/, nav: 'links', view: linksView, title: 'Сілтеме арқылы тапсырылған тесттер' },
   { re: /^\/organizer\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/organizer\/books\/(new|\d+)\/?$/, nav: 'books', view: bookEditView, title: 'Кітап' },
   { re: /^\/organizer\/images\/?$/, nav: 'images', view: imagesView, title: 'Суреттер' },

@@ -37,7 +37,7 @@ const errors = (err, _req, res, next) => {
   next(err);
 };
 
-const BOOK_COLUMNS = `b.id, b.title, b.subject, b.grade, b.publisher, b.description, b.cover_id, b.pdf_id, b.page_count,
+const BOOK_COLUMNS = `b.id, b.title, b.subject, b.grade, b.publisher, b.category, b.allow_download, b.description, b.cover_id, b.pdf_id, b.page_count,
   b.position, b.published, b.created_at, b.updated_at,
   c.version AS cover_version, c.kind AS cover_kind, p.size AS pdf_size, p.kind AS pdf_kind, p.name AS pdf_name`;
 const BOOK_FROM = 'FROM books b LEFT JOIN files c ON c.id = b.cover_id LEFT JOIN files p ON p.id = b.pdf_id';
@@ -51,7 +51,7 @@ function bookProblems(b) {
   return out;
 }
 
-const orgBook = (b) => ({ ...b, published: Boolean(b.published), problems: bookProblems(b) });
+const orgBook = (b) => ({ ...b, published: Boolean(b.published), allow_download: Boolean(b.allow_download), problems: bookProblems(b) });
 
 /** Removes a PDF (its chunks and its files row). */
 const dropPdf = (fileId) => [
@@ -98,6 +98,8 @@ async function parseBook(body) {
     subject: text(body.subject, 120, 'Пән') || SUBJECT,
     grade: tag(gradeOf(body.grade)),
     publisher: tag(publisherOf(body.publisher)),
+    category: text(body.category, 120, 'Санат немесе тақырып'),
+    allow_download: body.allow_download ? 1 : 0,
     description: text(body.description, 2000, 'Сипаттама'),
     cover_id: id(body.cover_id) || null,
     pdf_id: id(body.pdf_id) || null,
@@ -123,9 +125,9 @@ orgBooksRouter.post(
     const b = await parseBook(req.body || {});
     const position = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS n FROM books')).n;
     const { lastInsertRowid } = await run(
-      `INSERT INTO books (title, subject, grade, publisher, description, cover_id, pdf_id, page_count, position, published)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      b.title, b.subject, b.grade, b.publisher, b.description, b.cover_id, b.pdf_id, await pageCountOf(b.pdf_id), position,
+      `INSERT INTO books (title, subject, grade, publisher, category, allow_download, description, cover_id, pdf_id, page_count, position, published)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      b.title, b.subject, b.grade, b.publisher, b.category, b.allow_download, b.description, b.cover_id, b.pdf_id, await pageCountOf(b.pdf_id), position,
     );
     if (req.body?.published) await setPublished(lastInsertRowid, true);
     res.status(201).json(orgBook(await findBook(lastInsertRowid)));
@@ -141,9 +143,9 @@ orgBooksRouter.put(
     const b = await parseBook(req.body || {});
     const statements = [
       [
-        `UPDATE books SET title = ?, subject = ?, grade = ?, publisher = ?, description = ?, cover_id = ?, pdf_id = ?,
+        `UPDATE books SET title = ?, subject = ?, grade = ?, publisher = ?, category = ?, allow_download = ?, description = ?, cover_id = ?, pdf_id = ?,
            page_count = ?, updated_at = datetime('now') WHERE id = ?`,
-        b.title, b.subject, b.grade, b.publisher, b.description, b.cover_id, b.pdf_id,
+        b.title, b.subject, b.grade, b.publisher, b.category, b.allow_download, b.description, b.cover_id, b.pdf_id,
         b.pdf_id === old.pdf_id ? old.page_count : await pageCountOf(b.pdf_id), bookId,
       ],
     ];
@@ -306,6 +308,8 @@ const studentBook = (b) => ({
   subject: b.subject,
   grade: b.grade,
   publisher: b.publisher,
+  category: b.category || '',
+  allow_download: Boolean(b.allow_download),
   description: b.description,
   cover_id: b.cover_id,
   cover_version: b.cover_version,

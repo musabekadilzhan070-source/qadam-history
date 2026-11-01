@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { esc } from '../util.js';
 import { pageHead } from '../components.js';
-import { drawReport, pdfFromCanvas, dayTitle, almatyTime } from '../report-canvas.js';
+import { drawReport, pdfFromCanvas, dayTitle, almatyTime, minutes } from '../report-canvas.js';
 
 // «Кураторға есеп беру». Two reports, both the signed-in student's own data, fetched fresh:
 //  • «Тест бойынша»: one test, first result against the last one, history and what to repeat;
@@ -26,16 +26,19 @@ export async function reportView(el, _params, app, alive) {
   const { tests } = await api.get('/api/report/tests');
   if (!alive()) return;
   const asked = Number(new URLSearchParams(location.search).get('test'));
-  let mode = new URLSearchParams(location.search).get('mode') === 'day' || !tests.length ? 'day' : 'test';
+  const qs0 = new URLSearchParams(location.search);
+  // The overview first; a link from a result page asks for one test, ?mode=day for today.
+  let mode = qs0.get('mode') === 'day' ? 'day' : asked && tests.length ? 'test' : 'overview';
   let testId = tests.some((t) => t.test_id === asked) ? asked : tests[0]?.test_id ?? null;
 
   const option = (t) =>
     `<option value="${t.test_id}" ${t.test_id === testId ? 'selected' : ''}>${esc(t.title)} · ${t.attempts} рет · ${t.first_percent}% → ${t.last_percent}%</option>`;
 
   el.innerHTML = `
-    ${pageHead({ eyebrow: 'Есеп', title: 'Кураторға есеп беру', text: 'Нәтижеңіз бір суретте: алғашқы және соңғы нәтиже, өзгеріс, тапсыру тарихы. Суретті немесе PDF-ті сақтап, кураторға жіберіңіз.' })}
+    ${pageHead({ eyebrow: 'Есеп', title: 'Кураторға есеп беру', text: 'Оқу белсенділігіңіз бір суретте: тесттер, нәтижелер, кітаптар және сайтта өткізген уақыт. Суретті немесе PDF-ті сақтап, кураторға жіберіңіз.' })}
     <div class="report-actions panel">
       <div class="report-modes" role="group" aria-label="Есеп түрі">
+        <button type="button" class="chip" data-mode="overview" aria-pressed="${mode === 'overview'}">Жалпы есеп</button>
         <button type="button" class="chip" data-mode="test" aria-pressed="${mode === 'test'}" ${tests.length ? '' : 'disabled'}>Тест бойынша есеп</button>
         <button type="button" class="chip" data-mode="day" aria-pressed="${mode === 'day'}">Бүгінгі есеп</button>
       </div>
@@ -43,7 +46,7 @@ export async function reportView(el, _params, app, alive) {
         tests.length
           ? `<label class="tag-filter report-test" data-test-pick ${mode === 'test' ? '' : 'hidden'}><span>Тест</span>
               <select name="test">${tests.map(option).join('')}</select></label>`
-          : '<p class="report-note">Әзірге аяқталған тест жоқ. Тест тапсырған соң, мұнда алғашқы және соңғы нәтиже салыстырылады.</p>'
+          : `<p class="report-note" data-test-pick ${mode === 'test' ? '' : 'hidden'}>Әзірге аяқталған тест жоқ. Тест тапсырған соң, мұнда алғашқы және соңғы нәтиже салыстырылады.</p>`
       }
       <div class="report-buttons">
         <button type="button" class="btn" data-act="png" disabled>PNG жүктеу</button>
@@ -66,16 +69,23 @@ export async function reportView(el, _params, app, alive) {
   function syncUrl() {
     const qs = new URLSearchParams();
     if (mode === 'day') qs.set('mode', 'day');
-    else if (testId) qs.set('test', testId);
+    else if (mode === 'test' && testId) qs.set('test', testId);
     history.replaceState(null, '', qs.toString() ? `/report?${qs}` : '/report');
   }
 
   async function build() {
     const mine = ++run;
     el.querySelectorAll('[data-act]').forEach((b) => (b.disabled = true));
+    if (mode === 'test' && !testId) {
+      el.querySelector('[data-preview]').replaceChildren();
+      png = null;
+      el.querySelector('[data-act="refresh"]').disabled = false;
+      return note('Тест бойынша есеп аяқталған тест болғанда жасалады.');
+    }
     note('Есеп дайындалуда…');
     // Fresh data every time: a new attempt or a new Almaty day shows up at once.
-    const r = mode === 'test' ? await api.get(`/api/report/test/${testId}`) : await api.get('/api/report/daily');
+    const url = mode === 'test' ? `/api/report/test/${testId}` : mode === 'overview' ? '/api/report/overview' : '/api/report/daily';
+    const r = await api.get(url);
     if (!alive() || mine !== run) return;
     const c = await drawReport(mode, r);
     const blob = await toBlob(c, 'image/png');
@@ -83,17 +93,22 @@ export async function reportView(el, _params, app, alive) {
     canvas = c;
     png = blob;
     const stamp = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(new Date(r.generated_at));
-    base = mode === 'test' ? `qadam-esep-test-${testId}-${stamp}` : `qadam-esep-${r.day}`;
-    title = mode === 'test' ? `QADAM: ${r.test.title} бойынша есеп` : `QADAM: ${dayTitle(r.day)} күнгі есеп`;
+    base = mode === 'test' ? `qadam-esep-test-${testId}-${stamp}` : mode === 'overview' ? `qadam-esep-zhalpy-${stamp}` : `qadam-esep-${r.day}`;
+    title = mode === 'test' ? `QADAM: ${r.test.title} бойынша есеп` : mode === 'overview' ? `QADAM: ${r.student}, жалпы есеп` : `QADAM: ${dayTitle(r.day)} күнгі есеп`;
     const img = new Image();
-    img.alt = mode === 'test' ? `${r.student}: «${r.test.title}» тесті бойынша есеп` : `${r.student}: ${dayTitle(r.day)} күнгі есеп`;
+    img.alt =
+      mode === 'test'
+        ? `${r.student}: «${r.test.title}» тесті бойынша есеп`
+        : mode === 'overview'
+          ? `${r.student}: жалпы есеп. Тапсырған тест ${r.summary.attempts}, орташа нәтиже ${r.summary.average_percent ?? '—'}%, сайттағы уақыт ${minutes(r.summary.total_sec)}`
+          : `${r.student}: ${dayTitle(r.day)} күнгі есеп`;
     img.src = c.toDataURL('image/png'); // the page's CSP allows data: images, not blob:
     el.querySelector('[data-preview]').replaceChildren(img);
     const file = new File([blob], `${base}.png`, { type: 'image/png' });
     const canShare = Boolean(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
     el.querySelector('[data-act="share"]').hidden = !canShare;
     el.querySelectorAll('[data-act]').forEach((b) => (b.disabled = false));
-    const what = mode === 'test' ? `«${r.test.title}» · ${r.attempts.length} тапсыру` : dayTitle(r.day);
+    const what = mode === 'test' ? `«${r.test.title}» · ${r.attempts.length} тапсыру` : mode === 'overview' ? 'Жалпы есеп' : dayTitle(r.day);
     note(`${what} · жасалған уақыты ${almatyTime(r.generated_at)}`);
   }
   const rebuild = () => build().catch((err) => alive() && note(err.message || 'Есеп жасалмады.'));
@@ -110,8 +125,7 @@ export async function reportView(el, _params, app, alive) {
     if (modeBtn && modeBtn.dataset.mode !== mode) {
       mode = modeBtn.dataset.mode;
       el.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-      const pick = el.querySelector('[data-test-pick]');
-      if (pick) pick.hidden = mode !== 'test';
+      el.querySelectorAll('[data-test-pick]').forEach((pick) => (pick.hidden = mode !== 'test'));
       syncUrl();
       return rebuild();
     }

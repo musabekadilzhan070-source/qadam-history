@@ -45,14 +45,21 @@ activityRouter.post(
     const slots = new Set([Math.floor(second / SLOT_SEC)]);
     // «Active since the last beat»: also the slot just before, so timer jitter never loses a slot.
     if (req.body?.continuous && second >= SLOT_SEC - 1) slots.add(Math.floor((second - (SLOT_SEC - 1)) / SLOT_SEC));
-    await batch(
-      [...slots].map((slot) => [
+    const writes = [...slots].map((slot) => [
         `INSERT INTO activity_slots (user_id, day, slot, kind, book_id, page) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id, day, slot) DO UPDATE SET kind = excluded.kind, book_id = excluded.book_id, page = excluded.page
          WHERE activity_slots.kind = 'site' AND excluded.kind <> 'site'`,
         req.user.id, day, slot, kind, bookId, page,
-      ]),
-    );
+      ]);
+    // A page with 30 s of active time today is read, for good (the slots themselves are removed later).
+    if (bookId && page) {
+      writes.push([
+        `INSERT OR IGNORE INTO book_pages_read (user_id, book_id, page)
+         SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM activity_slots WHERE user_id = ? AND day = ? AND kind = 'book' AND book_id = ? AND page = ?) * ${SLOT_SEC} >= ${PAGE_READ_SEC}`,
+        req.user.id, bookId, page, req.user.id, day, bookId, page,
+      ]);
+    }
+    await batch(writes);
     res.json({ ok: true, day });
   }),
 );
@@ -295,8 +302,162 @@ reportRouter.get(
   }),
 );
 
-/** Old activity is not needed for daily reports: keep the last 120 days. */
+/**
+ * Slots older than 120 days are not needed for daily reports: their time is first added to
+ * activity_days (so the total time stays right), then they are removed, in one transaction.
+ */
 export async function purgeOldActivity() {
   const cutoff = dayOf(Date.now() - 120 * 24 * 3600 * 1000);
-  await run('DELETE FROM activity_slots WHERE day < ?', cutoff);
+  await batch([
+    [
+      `INSERT INTO activity_days (user_id, day, kind, book_id, seconds)
+       SELECT user_id, day, kind, COALESCE(book_id, 0), COUNT(*) * ${SLOT_SEC} FROM activity_slots WHERE day < ?
+       GROUP BY user_id, day, kind, COALESCE(book_id, 0)
+       ON CONFLICT(user_id, day, kind, book_id) DO UPDATE SET seconds = activity_days.seconds + excluded.seconds`,
+      cutoff,
+    ],
+    ['DELETE FROM activity_slots WHERE day < ?', cutoff],
+  ]);
 }
+
+// ─── Overview: everything the student did on QADAM ────────────────
+const addDays = (day, n) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+};
+/** Monday of the Almaty week holding `day`. */
+const mondayOf = (day) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return addDays(day, -((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7));
+};
+const dbToMs = (s) => (s ? Date.parse(String(s).replace(' ', 'T') + 'Z') : 0);
+/** A book is finished when at least 90% of its pages were read (opening it is not reading). */
+export const FINISHED_SHARE = 0.9;
+
+export async function overviewReport(user) {
+  const today = dayOf();
+  const monday = mondayOf(today);
+  const weekStart = addDays(today, -6);
+
+  // Active time: the kept slots plus the totals of removed old days.
+  const slots = await all(
+    'SELECT day, kind, book_id, COUNT(*) AS n, MAX(slot) AS last_slot FROM activity_slots WHERE user_id = ? GROUP BY day, kind, book_id',
+    user.id,
+  );
+  const old = await all('SELECT day, kind, book_id, seconds FROM activity_days WHERE user_id = ?', user.id);
+  const rows = [...slots.map((r) => ({ day: r.day, kind: r.kind, book_id: r.book_id || 0, sec: r.n * SLOT_SEC })), ...old.map((r) => ({ day: r.day, kind: r.kind, book_id: r.book_id, sec: r.seconds }))];
+  const sum = (pred) => rows.filter(pred).reduce((s, r) => s + r.sec, 0);
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const day = addDays(weekStart, i);
+    return { day, sec: sum((r) => r.day === day) };
+  });
+
+  // Tests: finished attempts and starts that were never submitted.
+  const attempts = await all(
+    `SELECT a.id, a.test_id, a.correct, a.total, a.score, a.max_score, a.duration_sec, a.created_at,
+            COALESCE(x.title, 'Өшірілген тест') AS title, COALESCE(t.title, '') AS topic_title
+     FROM attempts a LEFT JOIN tests x ON x.id = a.test_id LEFT JOIN topics t ON t.id = COALESCE(x.topic_id, a.topic_id)
+     WHERE a.user_id = ? AND a.kind = 'test' ORDER BY a.created_at DESC, a.id DESC`,
+    user.id,
+  );
+  const unfinished = await all(
+    `SELECT s.test_id, s.started_at, COALESCE(x.title, 'Өшірілген тест') AS title, COALESCE(t.title, '') AS topic_title
+     FROM test_starts s LEFT JOIN tests x ON x.id = s.test_id LEFT JOIN topics t ON t.id = x.topic_id
+     WHERE s.user_id = ? AND s.attempt_id IS NULL ORDER BY s.started_at DESC`,
+    user.id,
+  );
+  const history = [
+    ...attempts.map((a) => ({
+      status: 'finished',
+      test_id: a.test_id,
+      title: a.title,
+      topic_title: a.topic_title,
+      at: a.created_at,
+      correct: a.correct,
+      total: a.total,
+      score: a.score,
+      max_score: a.max_score,
+      percent: percentOf(a),
+      duration_sec: a.duration_sec,
+    })),
+    ...unfinished.map((s) => ({ status: 'unfinished', test_id: s.test_id, title: s.title, topic_title: s.topic_title, at: s.started_at })),
+  ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
+  // Books: every published book, with what the student did in it.
+  const books = (
+    await all(
+      `SELECT b.id, b.title, b.grade, b.publisher, b.subject, b.page_count,
+              (SELECT MIN(d.opened_at) FROM book_days d WHERE d.user_id = ? AND d.book_id = b.id) AS started_at,
+              g.last_opened_at, g.last_page,
+              (SELECT COUNT(*) FROM book_pages_read r WHERE r.user_id = ? AND r.book_id = b.id) AS pages_read
+       FROM books b LEFT JOIN book_progress g ON g.book_id = b.id AND g.user_id = ?
+       WHERE b.published = 1 OR g.user_id IS NOT NULL ORDER BY b.position, b.id`,
+      user.id,
+      user.id,
+      user.id,
+    )
+  ).map((b) => {
+    const pages = b.page_count || 0;
+    const progress = pages ? Math.min(100, Math.round((b.pages_read / pages) * 100)) : 0;
+    const opened = Boolean(b.started_at || b.last_opened_at);
+    const finished = pages > 0 && b.pages_read >= Math.ceil(pages * FINISHED_SHARE);
+    return {
+      book_id: b.id,
+      title: b.title,
+      subject: b.subject,
+      grade: b.grade ?? null,
+      publisher: b.publisher || '',
+      started_at: b.started_at,
+      last_opened_at: b.last_opened_at,
+      reading_sec: sum((r) => r.kind === 'book' && r.book_id === b.id),
+      pages_read: b.pages_read,
+      page_count: pages,
+      progress,
+      status: finished ? 'finished' : opened ? 'reading' : 'not_started',
+    };
+  });
+
+  // The latest moment of any activity: an active slot, a finished test or an opened book.
+  let lastMs = 0;
+  for (const r of slots) {
+    const [from] = utcRangeOf(r.day);
+    lastMs = Math.max(lastMs, dbToMs(from) + (r.last_slot + 1) * SLOT_SEC * 1000);
+  }
+  if (attempts[0]) lastMs = Math.max(lastMs, dbToMs(attempts[0].created_at));
+  for (const b of books) lastMs = Math.max(lastMs, dbToMs(b.last_opened_at));
+  lastMs = Math.min(lastMs, Date.now());
+
+  const finishedTests = history.filter((h) => h.status === 'finished');
+  return {
+    student: user.display_name,
+    generated_at: new Date().toISOString(),
+    today,
+    week_from: monday,
+    last_activity_at: lastMs ? new Date(lastMs).toISOString() : null,
+    summary: {
+      attempts: finishedTests.length + unfinished.length,
+      finished: finishedTests.length,
+      unfinished: unfinished.length,
+      tests_done: new Set(finishedTests.map((h) => h.test_id)).size,
+      average_percent: finishedTests.length ? Math.round(finishedTests.reduce((s, h) => s + h.percent, 0) / finishedTests.length) : null,
+      books_total: books.length,
+      books_opened: books.filter((b) => b.status !== 'not_started').length,
+      books_finished: books.filter((b) => b.status === 'finished').length,
+      today_sec: sum((r) => r.day === today),
+      week_sec: sum((r) => r.day >= monday && r.day <= today),
+      total_sec: sum(() => true),
+      test_sec: sum((r) => r.kind === 'test'),
+      reading_sec: sum((r) => r.kind === 'book'),
+    },
+    week,
+    history,
+    books,
+  };
+}
+
+reportRouter.get(
+  '/overview',
+  wrap(async (req, res) => {
+    res.json(await overviewReport(req.user));
+  }),
+);
