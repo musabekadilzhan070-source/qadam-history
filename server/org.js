@@ -12,7 +12,7 @@ import { readSpreadsheet } from './sheets.js';
 import { orgFeedbackRouter } from './feedback.js';
 import { orgBooksRouter } from './books.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
-import { gradeOf, publisherOf, textbookOf } from './catalog.js';
+import { gradeOf, publisherOf, textbookOf, TOPIC_GRADES, TOPIC_PUBLISHERS } from './catalog.js';
 import { latin } from './latin.js';
 import { orgLinksRouter, ensureLinks } from './links.js';
 
@@ -136,9 +136,13 @@ function parseKeyPoints(list) {
 const ICON_NAMES = ['home', 'periods', 'tests', 'materials', 'results', 'feedback', 'profile', 'book', 'clock', 'search', 'check', 'arrow', 'logout'];
 const EMBLEM_NAMES = ['emblem-1', 'emblem-2', 'emblem-3', 'emblem-4'];
 
-async function parseIcon(v) {
+/** Pixel size limits of an icon: site icons 14–64, a topic emblem 16–128. */
+export const ICON_SIZE = { min: 14, max: 64 };
+export const EMBLEM_SIZE = { min: 16, max: 128 };
+
+async function parseIcon(v, limits = ICON_SIZE) {
   if (!v || typeof v !== 'object') return null;
-  const size = Math.max(14, Math.min(64, Math.round(Number(v.size) || 22)));
+  const size = Math.max(limits.min, Math.min(limits.max, Math.round(Number(v.size) || 22)));
   if (v.kind === 'builtin') {
     if (![...ICON_NAMES, ...EMBLEM_NAMES].includes(v.name)) fail('Мұндай белгіше кітапханада жоқ.');
     return { kind: 'builtin', name: v.name, size };
@@ -512,7 +516,26 @@ orgRouter.put(
 );
 
 // ─── Topics ───────────────────────────────────────────────────────
+/**
+ * The grade and publisher of a topic: one of 6–11-сынып × Атамұра / Мектеп, required.
+ * A topic made before this field keeps having none while a request does not touch it (publishing
+ * from the list, assigning an emblem); the topic editor always sends it and must choose one.
+ */
+function topicClass(body, before) {
+  const sent = Boolean(body.grade) || Boolean(String(body.publisher ?? '').trim());
+  // Nothing chosen in this request: an existing topic keeps what it has (it can never be emptied).
+  if (!sent && before) return { grade: before.grade ?? null, publisher: before.publisher || '' };
+  const grade = Number(body.grade);
+  const publisher = String(body.publisher ?? '').trim();
+  if (!TOPIC_GRADES.includes(grade) || !TOPIC_PUBLISHERS.includes(publisher)) {
+    fail('Сынып пен баспаны таңдаңыз (мысалы: 8-сынып — Атамұра). Онсыз тақырыпты сақтауға болмайды.');
+  }
+  return { grade, publisher };
+}
+
 async function topicFields(body, id = null) {
+  const before = id ? await get('SELECT grade, publisher FROM topics WHERE id = ?', id) : null;
+  const cls = topicClass(body, before);
   const periodId = optId(body.period_id);
   if (!periodId || !(await get('SELECT 1 AS ok FROM periods WHERE id = ?', periodId))) fail('Кезеңді таңдаңыз.');
   const title = str(body.title, 160, 'Атауы', { required: true });
@@ -527,8 +550,10 @@ async function topicFields(body, id = null) {
     body: str(body.body, 60000, 'Оқу материалы'),
     key_points: JSON.stringify(parseKeyPoints(body.key_points)),
     image_id: imageId,
-    icon: JSON.stringify(await parseIcon(body.icon)),
+    icon: JSON.stringify(await parseIcon(body.icon, EMBLEM_SIZE)),
     published: bool(body.published),
+    grade: cls.grade,
+    publisher: cls.publisher,
   };
 }
 
@@ -538,9 +563,9 @@ orgRouter.post(
     const f = await topicFields(req.body || {});
     const position = await nextPosition('topics', 'WHERE period_id = ?', f.period_id);
     const { lastInsertRowid } = await run(
-      `INSERT INTO topics (period_id, slug, position, title, range_label, summary, body, key_points, image_id, icon, published)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      f.period_id, f.slug, position, f.title, f.range_label, f.summary, f.body, f.key_points, f.image_id, f.icon, f.published,
+      `INSERT INTO topics (period_id, slug, position, title, range_label, summary, body, key_points, image_id, icon, published, grade, publisher)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      f.period_id, f.slug, position, f.title, f.range_label, f.summary, f.body, f.key_points, f.image_id, f.icon, f.published, f.grade, f.publisher,
     );
     res.status(201).json({ id: lastInsertRowid, slug: f.slug });
   }),
@@ -556,8 +581,8 @@ orgRouter.put(
     const position = before.period_id === f.period_id ? null : await nextPosition('topics', 'WHERE period_id = ?', f.period_id);
     await run(
       `UPDATE topics SET period_id = ?, slug = ?, title = ?, range_label = ?, summary = ?, body = ?, key_points = ?,
-              image_id = ?, icon = ?, published = ?, position = COALESCE(?, position) WHERE id = ?`,
-      f.period_id, f.slug, f.title, f.range_label, f.summary, f.body, f.key_points, f.image_id, f.icon, f.published, position, id,
+              image_id = ?, icon = ?, published = ?, grade = ?, publisher = ?, position = COALESCE(?, position) WHERE id = ?`,
+      f.period_id, f.slug, f.title, f.range_label, f.summary, f.body, f.key_points, f.image_id, f.icon, f.published, f.grade, f.publisher, position, id,
     );
     res.json({ ok: true, slug: f.slug });
   }),

@@ -54,7 +54,11 @@ function snapshotFrom(dump) {
       key_points: parseJson(t.key_points, []),
       image_id: t.image_id ?? null,
       icon: parseJson(t.icon || 'null', null),
+      // Only when set, so topics made before keep the same published version.
+      ...(t.grade ? { grade: t.grade } : {}),
+      ...(t.publisher ? { publisher: t.publisher } : {}),
     }));
+  const topicById = new Map(topics.map((t) => [t.id, t]));
   const topicIds = new Set(topics.map((t) => t.id));
   const testOfQuestion = new Map(dump.questions.map((q) => [q.id, q.test_id]));
   const tests = dump.tests
@@ -66,9 +70,10 @@ function snapshotFrom(dump) {
       title: x.title,
       description: x.description || '',
       cover_image_id: x.cover_image_id ?? null,
-      // Only when set, so tests that are not tagged keep the same published version.
-      ...(x.grade ? { grade: x.grade } : {}),
-      ...(x.publisher ? { publisher: x.publisher } : {}),
+      // Only when set, so tests that are not tagged keep the same published version. A test
+      // without its own grade or publisher takes its topic's (the topic's class and textbook).
+      ...(x.grade || topicById.get(x.topic_id)?.grade ? { grade: x.grade || topicById.get(x.topic_id).grade } : {}),
+      ...(x.publisher || topicById.get(x.topic_id)?.publisher ? { publisher: x.publisher || topicById.get(x.topic_id).publisher } : {}),
       ...(x.subject ? { subject: x.subject } : {}),
       ...(x.book_year ? { book_year: x.book_year } : {}),
       ...(x.book_authors ? { book_authors: x.book_authors } : {}),

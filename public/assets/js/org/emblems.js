@@ -147,6 +147,7 @@ async function assign(ctx, topicId, value) {
   await org.put(`/topics/${t.id}`, {
     period_id: t.period_id, title: t.title, slug: t.slug, range_label: t.range_label, summary: t.summary, body: t.body,
     key_points: t.key_points, image_id: t.image_id, published: Boolean(t.published), icon: { ...value, size: t.icon?.size || 22 },
+    ...(t.grade ? { grade: t.grade, publisher: t.publisher } : {}),
   });
   await ctx.reload();
   return t;

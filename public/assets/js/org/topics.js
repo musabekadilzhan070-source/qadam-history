@@ -5,6 +5,9 @@ import {
   formValues, trackDirty, busy, moved,
 } from './ui.js';
 import { iconField, bindIconFields } from './icons.js';
+import { TOPIC_CLASSES, topicClassLabel } from '../catalog.js';
+
+const classKey = (t) => (t?.grade && t?.publisher ? `${t.grade}|${t.publisher}` : '');
 
 const related = (s, id) => ({
   tests: s.tests.filter((x) => x.topic_id === id),
@@ -48,15 +51,38 @@ export async function deleteTopic(ctx, topic) {
 
 const topicPayload = (t, patch = {}) => ({
   period_id: t.period_id, title: t.title, slug: t.slug, range_label: t.range_label, summary: t.summary, body: t.body,
-  key_points: t.key_points, image_id: t.image_id, icon: t.icon, published: Boolean(t.published), ...patch,
+  key_points: t.key_points, image_id: t.image_id, icon: t.icon, published: Boolean(t.published),
+  // A topic made before the grade and publisher field keeps none until it is edited.
+  ...(t.grade ? { grade: t.grade, publisher: t.publisher } : {}),
+  ...patch,
 });
 
 export function topicsView(el, _params, ctx) {
+  // Filter by grade and publisher: '' all, 'none' not chosen yet, or '8|Атамұра'.
+  let only = new URLSearchParams(location.search).get('class') || '';
+  const matches = (t) => !only || (only === 'none' ? !classKey(t) : classKey(t) === only);
   const draw = () => {
     const s = ctx.state;
-    el.innerHTML = s.periods
+    const missing = s.topics.filter((t) => !classKey(t)).length;
+    const shownCount = s.topics.filter(matches).length;
+    el.innerHTML = `
+      <section class="o-card o-topic-filter">
+        <label class="o-field"><span class="o-label">Сынып және баспа бойынша сүзу</span>
+          <select data-class-filter>
+            <option value="">Барлық тақырыптар (${s.topics.length})</option>
+            ${TOPIC_CLASSES.map(({ grade, publisher }) => {
+              const key = `${grade}|${publisher}`;
+              const n = s.topics.filter((t) => classKey(t) === key).length;
+              return `<option value="${esc(key)}" ${only === key ? 'selected' : ''}>${grade}-сынып — ${esc(publisher)} (${n})</option>`;
+            }).join('')}
+            <option value="none" ${only === 'none' ? 'selected' : ''}>Сынып пен баспа таңдалмаған (${missing})</option>
+          </select></label>
+        <p class="o-muted">${only ? `Көрсетілгені: ${shownCount} тақырып.` : missing ? `${missing} тақырыпқа сынып пен баспа әлі таңдалмаған: оларды ашып, «Сынып және баспа» өрісін толтырыңыз.` : 'Барлық тақырыпқа сынып пен баспа таңдалған.'}</p>
+      </section>` + s.periods
       .map((p) => {
-        const list = s.topics.filter((t) => t.period_id === p.id);
+        const all = s.topics.filter((t) => t.period_id === p.id);
+        const list = all.filter(matches);
+        if (only && !list.length) return '';
         return `
         <section class="o-card">
           <div class="o-card-head">
@@ -68,15 +94,17 @@ export function topicsView(el, _params, ctx) {
               ? `<ol class="o-rows">${list
                   .map((t, i) => {
                     const r = related(s, t.id);
+                    // Moving up/down works on the whole period, so it is off while a filter hides topics.
+                    const at = all.indexOf(t);
                     return `<li class="o-row" data-id="${t.id}" data-period="${p.id}">
                       <div class="o-order">
-                        <button type="button" class="o-icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Жоғары">▲</button>
-                        <button type="button" class="o-icon-btn" data-act="down" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Төмен">▼</button>
+                        <button type="button" class="o-icon-btn" data-act="up" ${only || at === 0 ? 'disabled' : ''} aria-label="Жоғары">▲</button>
+                        <button type="button" class="o-icon-btn" data-act="down" ${only || at === all.length - 1 ? 'disabled' : ''} aria-label="Төмен">▼</button>
                       </div>
                       <span class="o-row-icon">${t.icon ? renderIcon(t.icon, null, 'icon') : String(i + 1).padStart(2, '0')}</span>
                       <div class="o-row-body">
                         <a href="/organizer/topics/${t.id}" data-link><b>${esc(t.title)}</b></a>
-                        <small>${esc(t.range_label || '')}${t.range_label ? ' · ' : ''}${r.tests.length} тест${t.image_id ? ' · суреті бар' : ''}</small>
+                        <small>${topicClassLabel(t) ? `<span class="o-class-tag">${esc(topicClassLabel(t))}</span> ` : '<span class="o-warn">Сынып пен баспа таңдалмаған</span> · '}${esc(t.range_label || '')}${t.range_label ? ' · ' : ''}${r.tests.length} тест${t.image_id ? ' · суреті бар' : ''}</small>
                       </div>
                       ${statusBadge(t.published)}
                       <div class="o-row-actions">
@@ -94,6 +122,12 @@ export function topicsView(el, _params, ctx) {
       .join('');
   };
 
+  el.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-class-filter]')) return;
+    only = e.target.value;
+    history.replaceState(null, '', only ? `/organizer/topics?class=${encodeURIComponent(only)}` : '/organizer/topics');
+    draw();
+  });
   el.addEventListener('click', async (e) => {
     const row = e.target.closest('.o-row');
     const act = e.target.closest('[data-act]')?.dataset.act;
@@ -127,7 +161,7 @@ export function topicEditView(el, [id], ctx) {
   const isNew = id === 'new';
   const periodParam = Number(new URLSearchParams(location.search).get('period'));
   const t = isNew
-    ? { period_id: periodParam || s.periods[0]?.id, title: '', slug: '', range_label: '', summary: '', body: '', key_points: [], image_id: null, icon: null, published: 0 }
+    ? { period_id: periodParam || s.periods[0]?.id, title: '', slug: '', range_label: '', summary: '', body: '', key_points: [], image_id: null, icon: null, published: 0, grade: null, publisher: '' }
     : s.topics.find((x) => x.id === Number(id));
   if (!t) {
     el.innerHTML = '<div class="o-card"><p>Тақырып табылмады.</p><a class="btn btn-sm" href="/organizer/topics" data-link>Тақырыптарға оралу</a></div>';
@@ -147,7 +181,15 @@ export function topicEditView(el, [id], ctx) {
         ${input({ name: 'title', label: 'Тақырып атауы', value: t.title, required: true, max: 160 })}
         ${select({ name: 'period_id', label: 'Кезең', value: t.period_id, options: s.periods.map((p) => ({ value: p.id, label: p.title })), required: true })}
         ${input({ name: 'range_label', label: 'Уақыты (мысалы: XV ғасыр)', value: t.range_label, max: 80 })}
+        ${select({
+          name: 'class',
+          label: 'Сынып және баспа',
+          value: classKey(t),
+          required: true,
+          options: [{ value: '', label: 'Таңдаңыз…' }, ...TOPIC_CLASSES.map(({ grade, publisher }) => ({ value: `${grade}|${publisher}`, label: `${grade}-сынып — ${publisher}` }))],
+        })}
       </div>
+      ${!isNew && !classKey(t) ? '<p class="o-warn">Бұл тақырыпқа сынып пен баспа әлі таңдалмаған. Сақтау үшін «Сынып және баспа» өрісін толтырыңыз.</p>' : ''}
       ${textarea({ name: 'summary', label: 'Қысқаша сипаттама (тест карточкасында көрсетіледі)', value: t.summary, rows: 3, max: 600 })}
       ${iconField({ name: 'icon', label: 'Тақырып эмблемасы', value: t.icon, emblems: true })}
       ${toggle({ name: 'published', label: 'Оқушыларға көрсету (жариялағаннан кейін)', checked: t.published })}
@@ -170,6 +212,13 @@ export function topicEditView(el, [id], ctx) {
       form.elements.title.focus();
       return;
     }
+    if (!v.class) {
+      toast('Сынып пен баспаны таңдаңыз. Онсыз тақырыпты сақтауға болмайды.', 'error');
+      form.elements.class.focus();
+      form.elements.class.closest('.o-field').classList.add('is-invalid');
+      return;
+    }
+    const [grade, publisher] = v.class.split('|');
     // The reading text, key facts and picture are no longer shown to students; earlier values are kept as they are.
     const payload = topicPayload(t, {
       title: v.title,
@@ -178,6 +227,8 @@ export function topicEditView(el, [id], ctx) {
       summary: v.summary,
       icon: JSON.parse(v.icon || 'null'),
       published: Boolean(v.published),
+      grade: Number(grade),
+      publisher,
     });
     busy(form.querySelector('[type="submit"]'), async () => {
       const r = isNew ? await org.post('/topics', payload) : await org.put(`/topics/${t.id}`, payload);

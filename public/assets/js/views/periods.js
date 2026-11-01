@@ -3,6 +3,7 @@ import { esc, pad2, scoreBadge } from '../util.js';
 import { icon } from '../art.js';
 import { periodCard, pageHead } from '../components.js';
 import { site, renderIcon } from '../site.js';
+import { topicClassLabel } from '../catalog.js';
 
 export async function periodsView(el, _params, _app, alive) {
   const { periods, totals } = await api.get('/api/overview');
@@ -37,6 +38,7 @@ export async function periodView(el, [slug], app, alive) {
         <li class="panel topic-row">
           <span class="topic-index" aria-hidden="true">${t.icon ? renderIcon(t.icon, null, 'icon topic-icon') : pad2(i + 1)}</span>
           <div>
+            ${topicClassLabel(t) ? `<span class="topic-class">${esc(topicClassLabel(t))}</span>` : ''}
             <h2>${t.first_test_id ? `<a href="/tests/${t.first_test_id}" data-link>${esc(t.title)}</a>` : esc(t.title)}</h2>
             <p class="range">${esc(t.range_label)}</p>
             <p>${esc(t.summary)}</p>

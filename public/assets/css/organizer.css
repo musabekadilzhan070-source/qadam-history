@@ -705,6 +705,65 @@ textarea {
   width: 120px;
   accent-color: var(--red);
 }
+.o-icon-field .o-size {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.o-size-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.o-size-range input {
+  width: 160px;
+}
+.o-size-num {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1.5px solid var(--line, #d9d6cf);
+  border-radius: 10px;
+  background: var(--white, #fff);
+}
+.o-size-num:focus-within {
+  border-color: var(--red);
+}
+.o-size .o-size-num input {
+  width: 64px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  text-align: right;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+.o-size-num span {
+  padding: 0 10px 0 4px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.o-size-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.o-size-note.is-warn {
+  color: var(--red);
+  font-weight: 700;
+}
+.o-icon-field .o-icon-current {
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+.o-icon-field .o-icon-preview {
+  flex: none;
+  max-width: 100%;
+}
 
 /* Library dialogs */
 .o-lib-tools {
@@ -2099,4 +2158,28 @@ textarea {
 .o-warn-box ul {
   margin: 0;
   padding-left: 18px;
+}
+
+.o-topic-filter .o-field {
+  max-width: 420px;
+}
+.o-topic-filter .o-muted {
+  margin: 8px 0 0;
+}
+.o-class-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 4px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--white, #fff);
+  background: var(--ink, #131315);
+  border-radius: 999px;
+}
+.o-field.is-invalid select {
+  border-color: var(--red);
+}
+.o-row-icon .icon {
+  max-width: 34px;
+  max-height: 34px;
 }

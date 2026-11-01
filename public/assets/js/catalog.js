@@ -7,6 +7,11 @@ export const PUBLISHERS = ['Атамұра', 'Мектеп', 'Алматыкіт
 
 export const gradeLabel = (g) => (g ? `${g}-сынып` : '');
 
+/** The grade and publisher pairs a topic can belong to (server/catalog.js TOPIC_GRADES × TOPIC_PUBLISHERS). */
+export const TOPIC_CLASSES = [6, 7, 8, 9, 10, 11].flatMap((grade) => ['Атамұра', 'Мектеп'].map((publisher) => ({ grade, publisher })));
+/** «8-сынып | Атамұра» for a topic, or '' when not chosen. */
+export const topicClassLabel = (t) => (t?.grade && t?.publisher ? `${t.grade}-сынып | ${t.publisher}` : '');
+
 const hasBook = (x) => Boolean(x?.grade || x?.publisher || x?.subject || x?.book_year || x?.book_authors || x?.book_pages);
 
 /** «Қазақстан тарихы | 7-сынып | Атамұра», or '' when the test has no textbook information. */

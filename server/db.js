@@ -376,6 +376,9 @@ const COLUMNS = [
   ['books', 'allow_download', 'INTEGER NOT NULL DEFAULT 0'],
   // A link attempt is the whole test ('test') or a rework of the wrong answers of an earlier
   // attempt ('rework', parent_id = that attempt, root_id = the whole test it started from).
+  // The grade and textbook publisher a topic belongs to (null/'' for topics made before).
+  ['topics', 'grade', 'INTEGER'],
+  ['topics', 'publisher', "TEXT NOT NULL DEFAULT ''"],
   ['link_attempts', 'kind', "TEXT NOT NULL DEFAULT 'test'"],
   ['link_attempts', 'parent_id', 'INTEGER'],
   ['link_attempts', 'root_id', 'INTEGER'],

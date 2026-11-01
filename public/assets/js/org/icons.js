@@ -77,12 +77,34 @@ export function bindIconFields(root, ctx) {
       paint();
       field.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    // A topic emblem is 16–128 px (the server keeps the same limits); other icons 14–64 px.
+    const [min, max] = 'emblems' in field.dataset ? [16, 128] : [14, 64];
+    const clampSize = (n) => Math.max(min, Math.min(max, Math.round(n)));
     const paint = () => {
       const v = get();
+      const size = v ? clampSize(v.size || 22) : 22;
       field.querySelector('.o-icon-current').innerHTML = v
-        ? `${preview(v)}<label class="o-size">Өлшемі <input type="range" min="14" max="64" value="${v.size || 22}" data-size /> <b>${v.size || 22}px</b></label>`
+        ? `${preview({ ...v, size })}<div class="o-size">
+            <label class="o-size-range"><span>Өлшемі</span><input type="range" min="${min}" max="${max}" step="1" value="${size}" data-size aria-label="Эмблема өлшемі (жүгірткі)" /></label>
+            <label class="o-size-num"><input type="number" inputmode="numeric" min="${min}" max="${max}" step="1" value="${size}" data-size-num aria-label="Эмблема өлшемі, пиксель" /><span>px</span></label>
+            <small class="o-size-note" data-size-note>${min}–${max} px</small>
+          </div>`
         : `<span class="o-file-empty">${'emblems' in field.dataset ? 'Әдепкі эмблема қолданылады' : 'Белгіше жоқ'}</span>`;
       field.querySelector('[data-act="clear"]').hidden = !v;
+    };
+    /** Applies a size from the slider or the number box: both controls and the preview follow. */
+    const applySize = (n, from) => {
+      const v = get();
+      if (!v) return;
+      v.size = clampSize(n);
+      hidden.value = JSON.stringify(v);
+      const range = field.querySelector('[data-size]');
+      const num = field.querySelector('[data-size-num]');
+      if (from !== range) range.value = v.size;
+      if (from !== num) num.value = v.size;
+      field.querySelector('.o-icon-preview')?.replaceWith(document.createRange().createContextualFragment(preview(v)));
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      return v.size;
     };
     paint();
     field.addEventListener('click', async (e) => {
@@ -93,12 +115,50 @@ export function bindIconFields(root, ctx) {
       } else if (act === 'clear') set(null);
     });
     field.addEventListener('input', (e) => {
-      if (!e.target.matches('[data-size]')) return;
+      const note = field.querySelector('[data-size-note]');
+      if (e.target.matches('[data-size]')) {
+        applySize(Number(e.target.value), e.target);
+        note.textContent = `${min}–${max} px`;
+        note.classList.remove('is-warn');
+      } else if (e.target.matches('[data-size-num]')) {
+        // While typing: only whole numbers inside the limits change the emblem at once.
+        const raw = e.target.value.trim();
+        const n = Number(raw);
+        if (!/^\d+$/.test(raw)) {
+          note.textContent = `Тек бүтін сан жазыңыз (${min}–${max} px).`;
+          note.classList.add('is-warn');
+        } else if (n < min || n > max) {
+          note.textContent = `Өлшем ${min}–${max} px аралығында болуы керек.`;
+          note.classList.add('is-warn');
+        } else {
+          applySize(n, e.target);
+          note.textContent = `${min}–${max} px`;
+          note.classList.remove('is-warn');
+        }
+      }
+    });
+    // Leaving the box: a value outside the limits is set to the nearest allowed one.
+    field.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-size-num]')) return;
+      const n = parseFloat(String(e.target.value).replace(',', '.'));
+      const note = field.querySelector('[data-size-note]');
       const v = get();
-      v.size = Number(e.target.value);
-      hidden.value = JSON.stringify(v);
-      field.querySelector('.o-icon-preview')?.replaceWith(document.createRange().createContextualFragment(preview(v)));
-      field.querySelector('.o-size b').textContent = `${v.size}px`;
+      const size = applySize(Number.isFinite(n) ? n : v?.size || 22);
+      if (size !== undefined) e.target.value = size;
+      if (Number.isFinite(n) && (n < min || n > max || !Number.isInteger(n))) {
+        note.textContent = `Өлшем ${size} px болып қойылды (рұқсат: ${min}–${max} px, бүтін сан).`;
+        note.classList.add('is-warn');
+      } else {
+        note.textContent = `${min}–${max} px`;
+        note.classList.remove('is-warn');
+      }
+    });
+    field.addEventListener('keydown', (e) => {
+      // A number box inside a form: Enter applies the size instead of submitting the form.
+      if (e.target.matches('[data-size-num]') && e.key === 'Enter') {
+        e.preventDefault();
+        e.target.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     });
   });
 }

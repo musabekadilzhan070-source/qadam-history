@@ -3,6 +3,10 @@
 
 export const SUBJECT = 'Қазақстан тарихы';
 export const GRADES = [5, 6, 7, 8, 9, 10, 11];
+/** A topic belongs to one of these grade and publisher pairs (6–11-сынып × Атамұра, Мектеп). */
+export const TOPIC_GRADES = [6, 7, 8, 9, 10, 11];
+export const TOPIC_PUBLISHERS = ['Атамұра', 'Мектеп'];
+
 /** Suggested publishers; any other name can be typed. */
 export const PUBLISHERS = ['Атамұра', 'Мектеп', 'Алматыкітап'];
 
