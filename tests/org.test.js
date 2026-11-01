@@ -399,3 +399,48 @@ test('site texts and icons reach the student side after publishing', async () =>
   assert.equal(site.icons['nav.home'].size, 30);
   assert.equal(site.icons['period.1'].id, img.body.id);
 });
+
+test('topic grade and publisher: required for a new topic, one of 12 pairs, kept, shown to students', async () => {
+  const org = await organizer();
+  const ic = (x) => (typeof x.icon === 'string' ? JSON.parse(x.icon) : x.icon);
+  const { body: st } = await org('GET', '/api/org/state');
+  const period = st.periods[0].id;
+  // A new topic cannot be saved without them, nor with a pair outside the list.
+  assert.equal((await org('POST', '/api/org/topics', { title: 'Сыныпсыз тақырып', period_id: period })).status, 400);
+  assert.equal((await org('POST', '/api/org/topics', { title: 'Қате', period_id: period, grade: 5, publisher: 'Атамұра' })).status, 400);
+  assert.equal((await org('POST', '/api/org/topics', { title: 'Қате', period_id: period, grade: 8, publisher: 'Алматыкітап' })).status, 400);
+  const ids = [];
+  for (const grade of [6, 7, 8, 9, 10, 11]) {
+    for (const publisher of ['Атамұра', 'Мектеп']) {
+      const r = await org('POST', '/api/org/topics', { title: `${grade} ${publisher} тақырыбы`, period_id: period, grade, publisher, published: true, icon: { kind: 'emblem', name: 'k-shanyrak', size: 36 } });
+      assert.equal(r.status, 201, `${grade} ${publisher}`);
+      ids.push([r.body.id, grade, publisher]);
+    }
+  }
+  let { body: s2 } = await org('GET', '/api/org/state');
+  for (const [id, grade, publisher] of ids) {
+    const t = s2.topics.find((x) => x.id === id);
+    assert.deepEqual([t.grade, t.publisher, ic(t).size], [grade, publisher, 36]);
+  }
+  // Editing changes it; a request without it (publishing from the list) keeps it.
+  const [first] = ids;
+  const t = s2.topics.find((x) => x.id === first[0]);
+  assert.equal((await org('PUT', `/api/org/topics/${t.id}`, { ...t, icon: ic(t), grade: 9, publisher: 'Мектеп' })).status, 200);
+  assert.equal((await org('PUT', `/api/org/topics/${t.id}`, { ...t, icon: ic(t), grade: null, publisher: '', published: false })).status, 200);
+  ({ body: s2 } = await org('GET', '/api/org/state'));
+  const after = s2.topics.find((x) => x.id === t.id);
+  assert.deepEqual([after.grade, after.publisher, after.published], [9, 'Мектеп', 0]);
+  // Emblem size: 16–128 px, outside values are set to the nearest limit.
+  for (const [size, want] of [[16, 16], [128, 128], [200, 128], [3, 16], [36.6, 37]]) {
+    await org('PUT', `/api/org/topics/${t.id}`, { ...after, icon: { kind: 'emblem', name: 'k-shanyrak', size } });
+    ({ body: s2 } = await org('GET', '/api/org/state'));
+    assert.equal(ic(s2.topics.find((x) => x.id === t.id)).size, want, `size ${size}`);
+  }
+  // Students see the pair on the topic list after publishing.
+  await org('POST', '/api/org/publish', {});
+  const pupil = await student();
+  const slug = (await pupil('GET', '/api/overview')).body.periods.find((p) => p.id === period).slug;
+  const page = (await pupil('GET', `/api/periods/${slug}`)).body;
+  const shown = page.topics.find((x) => x.id === ids[1][0]);
+  assert.deepEqual([shown.grade, shown.publisher], [6, 'Мектеп']);
+});

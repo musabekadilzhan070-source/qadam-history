@@ -77,6 +77,8 @@ const topicSummary = (snap, t, best) => {
     summary: t.summary,
     image_id: t.image_id,
     icon: topicIcon(t),
+    grade: t.grade ?? null,
+    publisher: t.publisher || '',
     question_count: tests.reduce((s, x) => s + servedCount(x), 0),
     test_count: tests.length,
     first_test_id: tests[0]?.id ?? null,
