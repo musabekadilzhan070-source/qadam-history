@@ -107,7 +107,8 @@ test('test link: off by default, opened by the organizer, taken without an accou
   assert.equal(r.finished, true);
   assert.equal(r.show_result, true);
   assert.ok(r.percent > 0);
-  assert.equal(r.items, undefined, 'answers are hidden unless the organizer shows them');
+  assert.equal(r.items.length, r.total, 'every question is reviewed');
+  assert.ok(r.items.every((i) => 'correct_option_ids' in i || i.type !== 'single'), 'correct answers shown by default');
   // The same submit again: the same result, still one row.
   const twice = (await guest('POST', `/api/link/${link.share_id}/submit`, { token: paper.token, answers: {} })).body;
   assert.equal(twice.percent, r.percent);
@@ -220,4 +221,84 @@ test('student report: unfinished tests, time today/week/total, books not read ju
   const theirs = (await other('GET', '/api/report/overview')).body;
   assert.equal(theirs.summary.attempts, 0);
   assert.equal((await client()('GET', '/api/report/overview')).status, 401);
+});
+
+test('test link: full review and rework of the wrong answers, kept apart from the first result', async () => {
+  const org = await organizer();
+  const { links } = (await org('GET', '/api/org/links')).body;
+  const link = links[3];
+  assert.equal(link.show_answers, true, 'new links show the correct answers by default');
+  const test = (await org('GET', `/api/org/tests/${link.test_id}`)).body;
+  const opts = {};
+  for (const q of test.questions) for (const c of q.type === 'context' ? q.children : [q]) if (c.options?.length) opts[c.id] = c.options;
+  assert.equal((await org('PUT', `/api/org/links/${link.test_id}`, { enabled: true, retakes: false })).status, 200);
+
+  const a = client();
+  const paper = (await a('POST', `/api/link/${link.share_id}/start`, { name: 'Айгерім Сәкен' })).body;
+  const ids = paper.units.map((u) => u.id).filter((id) => opts[id]);
+  assert.ok(ids.length >= 3);
+  const right = (id) => opts[id].filter((o) => o.is_correct).map((o) => o.id);
+  const wrong = (id) => [opts[id].find((o) => !o.is_correct).id];
+  // Two right, the rest wrong.
+  const answers = Object.fromEntries(ids.map((id, i) => [id, i < 2 ? right(id) : wrong(id)]));
+  const r1 = (await a('POST', `/api/link/${link.share_id}/submit`, { token: paper.token, answers })).body;
+  assert.equal(r1.correct, 2);
+  assert.equal(r1.items.length, r1.total);
+  assert.ok(r1.items.every((i) => 'is_correct' in i && 'chosen_option_ids' in i && 'correct_option_ids' in i));
+  assert.equal(r1.can_rework, true);
+
+  // Another browser cannot rework this attempt with its token.
+  const b = client();
+  await b('GET', `/api/link/${link.share_id}`);
+  assert.equal((await b('POST', `/api/link/${link.share_id}/rework`, { token: paper.token })).status, 404);
+
+  const rw = (await a('POST', `/api/link/${link.share_id}/rework`, { token: paper.token })).body;
+  assert.equal(rw.kind, 'rework');
+  assert.equal(rw.time_limit_sec, 0);
+  const rwIds = rw.units.map((u) => u.id);
+  assert.deepEqual(new Set(rwIds), new Set(ids.slice(2)), 'only the wrong questions');
+  assert.ok(rw.units.every((u) => u.options.every((o) => !('is_correct' in o))));
+  // A second click continues the same rework.
+  assert.equal((await a('POST', `/api/link/${link.share_id}/rework`, { token: paper.token })).body.attempt_id, rw.attempt_id);
+  // Fix all but one.
+  const r2 = (await a('POST', `/api/link/${link.share_id}/submit`, { token: rw.token, answers: Object.fromEntries(rwIds.map((id, i) => [id, i === 0 ? wrong(id) : right(id)])) })).body;
+  assert.equal(r2.kind, 'rework');
+  assert.equal(r2.total, rwIds.length);
+  assert.equal(r2.correct, rwIds.length - 1);
+  assert.equal(r2.original.correct, 2, 'the first result is shown unchanged');
+  assert.equal(r2.can_rework, true);
+  // Rework of the rework: only the one still wrong; all right then.
+  const rw2 = (await a('POST', `/api/link/${link.share_id}/rework`, { token: rw.token })).body;
+  assert.deepEqual(rw2.units.map((u) => u.id), [rwIds[0]]);
+  const r3 = (await a('POST', `/api/link/${link.share_id}/submit`, { token: rw2.token, answers: { [rwIds[0]]: right(rwIds[0]) } })).body;
+  assert.equal(r3.correct, 1);
+  assert.equal(r3.can_rework, false);
+  assert.equal((await a('POST', `/api/link/${link.share_id}/rework`, { token: rw2.token })).status, 400);
+  // Reworks are not new attempts: retakes stay closed, the page says the test is done.
+  assert.equal((await a('GET', `/api/link/${link.share_id}`)).body.already_done, true);
+
+  // Organizer: one row with its reworks; the first result unchanged; details list both reworks.
+  const { results } = (await org('GET', `/api/org/links/results?test_id=${link.test_id}`)).body;
+  assert.equal(results.length, 1);
+  assert.equal(results[0].correct, 2);
+  assert.equal(results[0].reworks, 2);
+  assert.deepEqual([results[0].rework_last.correct, results[0].rework_last.total], [1, 1]);
+  const work = (await org('GET', `/api/org/links/results/${results[0].id}`)).body;
+  assert.equal(work.items.length, r1.total);
+  assert.deepEqual(work.rework_list.map((r) => [r.correct, r.total]), [[rwIds.length - 1, rwIds.length], [1, 1]]);
+  const csv = (await org('GET', `/api/org/links/results/export?format=csv&test_id=${link.test_id}`)).body.toString('utf8');
+  assert.equal((csv.match(/Қатемен жұмыс/g) || []).length, 2);
+  assert.equal((await org('GET', '/api/org/links')).body.links.find((l) => l.test_id === link.test_id).finished, 1);
+
+  // Correct answers hidden by the organizer: the review still shows each verdict, without the key.
+  assert.equal((await org('PUT', `/api/org/links/${link.test_id}`, { show_answers: false, retakes: true })).status, 200);
+  const c = client();
+  const p2 = (await c('POST', `/api/link/${link.share_id}/start`, { name: 'Нұрлан Ерік' })).body;
+  const r4 = (await c('POST', `/api/link/${link.share_id}/submit`, { token: p2.token, answers: {} })).body;
+  assert.equal(r4.items.length, r4.total);
+  assert.ok(r4.items.every((i) => !('correct_option_ids' in i) && i.answers_hidden));
+  // Deleting the result removes its reworks too.
+  assert.equal((await org('DELETE', `/api/org/links/results/${results[0].id}`)).status, 200);
+  const left = (await org('GET', `/api/org/links/results/export?format=csv&test_id=${link.test_id}`)).body.toString('utf8');
+  assert.ok(!left.includes('Айгерім'));
 });

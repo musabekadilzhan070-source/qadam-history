@@ -2063,3 +2063,40 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.o-cell-note {
+  display: block;
+  font-size: 12px;
+}
+.o-work-rework {
+  padding-top: 14px;
+  margin-top: 18px;
+  border-top: 2px solid var(--o-line, #e4e4e7);
+}
+.o-work-rework h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.o-font-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.o-font-ok {
+  color: #17603c;
+}
+.o-warn-box {
+  padding: 12px 14px;
+  color: #6b3d00;
+  background: #fff4dc;
+  border: 1px solid #f0d49a;
+  border-radius: 10px;
+}
+.o-warn-box p {
+  margin: 6px 0;
+}
+.o-warn-box ul {
+  margin: 0;
+  padding-left: 18px;
+}

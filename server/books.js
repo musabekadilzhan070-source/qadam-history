@@ -92,6 +92,20 @@ orgBooksRouter.get(
   }),
 );
 
+// A chunk of a book's PDF for the cabinet (the editor checks the PDF's fonts with it).
+orgBooksRouter.get(
+  '/:id(\\d+)/pdf/:file(\\d+)/:idx(\\d+)',
+  wrap(async (req, res) => {
+    const book = await findBook(id(req.params.id));
+    if (!book || book.pdf_id !== id(req.params.file)) failWith(404, 'Кітап табылмады.');
+    const chunk = await get('SELECT data FROM file_chunks WHERE file_id = ? AND idx = ?', book.pdf_id, Number(req.params.idx));
+    if (!chunk) failWith(404, 'Файл бөлігі табылмады.');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(Buffer.from(chunk.data));
+  }),
+);
+
 async function parseBook(body) {
   const book = {
     title: text(body.title, 200, 'Кітап атауы', true),

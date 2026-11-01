@@ -1,7 +1,7 @@
 import { org } from './api.js';
 import { esc, icon, toast, confirmDialog, select, fileField, bindFileFields, busy, formatBytes, statusBadge } from './ui.js';
 import { GRADES, PUBLISHERS, SUBJECT, gradeLabel } from '../catalog.js';
-import { countPages } from '../pdf.js';
+import { inspectPdf, openChunked, fontReport } from '../pdf.js';
 
 // «Кітаптар»: textbooks for students. A book has a cover image and a PDF; the PDF goes to the
 // server in 1 MB pieces with a progress bar, and the book cannot be shown before it is complete.
@@ -104,6 +104,7 @@ export async function bookEditView(el, [param], ctx, alive) {
   let uploading = null; // { cancelled } while a PDF is being sent
   let freshPdf = null; // a PDF uploaded here and not saved yet
   let dirty = false;
+  let fonts = null; // null | 'checking' | 'error' | { missing, checked }: are the PDF's fonts inside it?
   ctx.setDirtyCheck(() => dirty || Boolean(uploading));
 
   const pdfBox = () => `
@@ -119,7 +120,45 @@ export async function bookEditView(el, [param], ctx, alive) {
         </div>
       </div>
       <small class="o-hint">Тек PDF, ең көбі ${esc(limits.max_pdf_label)}. Файл бөліктермен жүктеледі: жүктеу аяқталмайынша кітапты сақтауға болмайды.</small>
+      <div data-font-check>${fontNote()}</div>
     </div>`;
+
+  // Whether the book will look exactly like the original: pdf.js draws a PDF's own fonts; a font
+  // that is only named in the file is replaced by a similar one on the student's device.
+  function fontNote() {
+    if (!pdf || !fonts) return '';
+    if (fonts === 'checking') return '<p class="o-muted o-font-note">Қаріптер тексерілуде…</p>';
+    if (fonts === 'error') return '';
+    if (!fonts.missing.length) return `<p class="o-font-note o-font-ok">Қаріптер тексерілді (${fonts.checked} бет): барлық қаріп PDF файлының ішінде, мәтін түпнұсқадағыдай көрсетіледі.</p>`;
+    const names = fonts.missing.slice(0, 8).map(esc).join(', ') + (fonts.missing.length > 8 ? ` және тағы ${fonts.missing.length - 8}` : '');
+    return `<div class="o-font-note o-warn-box"><b>Бұл PDF-те ${fonts.missing.length} қаріп файлдың ішіне ендірілмеген: ${names}.</b>
+      <p>Мұндай мәтінді ешбір оқу құралы түпнұсқадай көрсете алмайды: оқушының құрылғысында дәл сол қаріп болмаса, ұқсас қаріппен көрінеді (әріп пішіні, ені өзгеруі мүмкін). Шешімі: PDF-ті қаріптерін ендіріп қайта сақтап, «PDF ауыстыру» арқылы жүктеу.</p>
+      <ul><li>Word: «Файл → Параметрлер → Сақтау → Қаріптерді файлға ендіру», сосын «Сақтау → PDF», «Параметрлер» ішінде «PDF/A үйлесімді» белгісі.</li>
+      <li>Adobe Acrobat: «Құралдар → Баспаға дайындау → Preflight → Embed missing fonts» немесе «Save as → PDF/A».</li>
+      <li>Түпнұсқа PDF-ті баспадан (мысалы, Атамұра, Мектеп сайттарынан) алу: олардың файлдарында қаріптер әдетте ендірілген.</li></ul></div>`;
+  }
+  const drawFonts = () => {
+    const box = el.querySelector('[data-font-check]');
+    if (box) box.innerHTML = fontNote();
+  };
+  async function checkSavedPdf() {
+    if (!pdf || !book.id) return;
+    fonts = 'checking';
+    drawFonts();
+    let task = null;
+    try {
+      const opened = await openChunked(`/api/org/books/${book.id}/pdf/${pdf.file_id}`, { size: pdf.size, chunk_size: limits.chunk_size });
+      task = opened.task;
+      const report = await fontReport(opened.doc);
+      if (!alive()) return;
+      fonts = report;
+    } catch {
+      fonts = 'error';
+    } finally {
+      task?.destroy();
+    }
+    drawFonts();
+  }
 
   const draw = () => {
     el.innerHTML = `
@@ -154,6 +193,7 @@ export async function bookEditView(el, [param], ctx, alive) {
     document.getElementById('o-title').textContent = book.title || 'Кітап';
   };
   draw();
+  checkSavedPdf();
 
   const setDirty = () => {
     dirty = true;
@@ -195,8 +235,9 @@ export async function bookEditView(el, [param], ctx, alive) {
     try {
       progress(0, 'PDF тексерілуде…');
       let pages;
+      let report = null;
       try {
-        pages = await countPages(file);
+        ({ pages, fonts: report } = await inspectPdf(file));
       } catch {
         throw new Error('PDF файлы ашылмады: файл бүлінген немесе құпиясөзбен қорғалған. Басқа файлды таңдаңыз.');
       }
@@ -204,6 +245,7 @@ export async function bookEditView(el, [param], ctx, alive) {
       if (freshPdf && freshPdf !== done.file_id) org.del(`/books/uploads/${freshPdf}`).catch(() => {});
       freshPdf = done.file_id;
       pdf = done;
+      fonts = report || 'error';
       el.querySelector('[data-pdf-box]').innerHTML = pdfBox();
       setDirty();
       toast(`PDF жүктелді: ${pages} бет. Кітапты сақтаңыз.`);

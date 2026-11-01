@@ -270,7 +270,7 @@ CREATE TABLE IF NOT EXISTS test_links (
   closes_at TEXT,
   retakes INTEGER NOT NULL DEFAULT 1,
   show_result INTEGER NOT NULL DEFAULT 1,
-  show_answers INTEGER NOT NULL DEFAULT 0,
+  show_answers INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -374,6 +374,11 @@ const COLUMNS = [
   // A book's section in the list, and whether students may save its PDF.
   ['books', 'category', "TEXT NOT NULL DEFAULT ''"],
   ['books', 'allow_download', 'INTEGER NOT NULL DEFAULT 0'],
+  // A link attempt is the whole test ('test') or a rework of the wrong answers of an earlier
+  // attempt ('rework', parent_id = that attempt, root_id = the whole test it started from).
+  ['link_attempts', 'kind', "TEXT NOT NULL DEFAULT 'test'"],
+  ['link_attempts', 'parent_id', 'INTEGER'],
+  ['link_attempts', 'root_id', 'INTEGER'],
 ];
 
 async function addMissingColumns() {
@@ -388,7 +393,12 @@ export async function migrate() {
   await db.executeMultiple(SCHEMA);
   await db.executeMultiple(SCHEMA_V2);
   await db.executeMultiple(SCHEMA_V3);
+  const firstReworkRun = !(await all('PRAGMA table_info(link_attempts)')).some((c) => c.name === 'kind');
   await addMissingColumns();
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_link_attempts_root ON link_attempts(root_id)');
+  // Links now show each question with the student's answer and the correct one by default
+  // (like a self-graded form): applied once to the links made before; the organizer can turn it off.
+  if (firstReworkRun) await db.execute('UPDATE test_links SET show_answers = 1 WHERE show_answers = 0');
   // Pages read before book_pages_read existed: from the slots still kept.
   await db.execute(
     `INSERT OR IGNORE INTO book_pages_read (user_id, book_id, page)

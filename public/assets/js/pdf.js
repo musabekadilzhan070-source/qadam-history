@@ -20,16 +20,49 @@ export const DOC_OPTIONS = {
   enableXfa: false,
 };
 
-/** Opens a local PDF file (organizer upload check): resolves with its page count, or throws. */
-export async function countPages(file) {
+/**
+ * Fonts a PDF uses without carrying them inside the file. pdf.js can draw a page exactly only
+ * with the fonts the PDF contains; a font that is only named is replaced by the device's font of
+ * that name or a similar one, so the letters may look different from the original. Checks up to
+ * `maxPages` pages spread over the book. Returns { missing: [font names], checked: pages }.
+ */
+export async function fontReport(doc, maxPages = 24) {
+  const { OPS } = await pdfjs();
+  const total = doc.numPages;
+  const step = Math.max(1, total / maxPages);
+  const pages = [...new Set(Array.from({ length: Math.min(total, maxPages) }, (_, i) => Math.min(total, 1 + Math.floor(i * step))))];
+  const missing = new Set();
+  for (const n of pages) {
+    const page = await doc.getPage(n);
+    const ops = await page.getOperatorList();
+    for (let i = 0; i < ops.fnArray.length; i += 1) {
+      if (ops.fnArray[i] !== OPS.setFont) continue;
+      const fontId = ops.argsArray[i][0];
+      if (!page.commonObjs.has(fontId)) continue;
+      const font = page.commonObjs.get(fontId);
+      if (font?.missingFile && !font.isType3Font) missing.add(String(font.name || fontId).replace(/^[A-Z]{6}\+/, ''));
+    }
+    page.cleanup();
+  }
+  return { missing: [...missing].sort(), checked: pages.length };
+}
+
+/** Opens a local PDF file (organizer upload check): its page count and font report, or throws. */
+export async function inspectPdf(file) {
   const { getDocument } = await pdfjs();
   const task = getDocument({ ...DOC_OPTIONS, data: new Uint8Array(await file.arrayBuffer()) });
   try {
     const doc = await task.promise;
-    return doc.numPages;
+    const fonts = await fontReport(doc).catch(() => null);
+    return { pages: doc.numPages, fonts };
   } finally {
     task.destroy();
   }
+}
+
+/** Opens a local PDF file: resolves with its page count, or throws. */
+export async function countPages(file) {
+  return (await inspectPdf(file)).pages;
 }
 
 /**
