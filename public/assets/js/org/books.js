@@ -20,7 +20,7 @@ export async function booksView(el, _params, ctx, alive) {
       </div>
       <span class="o-book-thumb">${b.cover_id && b.cover_kind === 'image' ? `<img src="${coverSrc(b)}" alt="" />` : icon('book')}</span>
       <div class="o-row-body"><a href="/organizer/books/${b.id}" data-link><b>${esc(b.title)}</b></a>
-        <small>${esc([b.subject, gradeLabel(b.grade), b.publisher].filter(Boolean).join(' · '))}${b.pdf_kind === 'bookpdf' ? ` · PDF ${formatBytes(b.pdf_size)}${b.page_count ? `, ${b.page_count} бет` : ''}` : ''}
+        <small>${esc([b.category, b.subject, gradeLabel(b.grade), b.publisher].filter(Boolean).join(' · '))}${b.pdf_kind === 'bookpdf' ? ` · PDF ${formatBytes(b.pdf_size)}${b.page_count ? `, ${b.page_count} бет` : ''}` : ''}
         ${b.problems.length ? `<br><span class="o-warn">${esc(b.problems.join(' '))}</span>` : ''}</small></div>
       ${statusBadge(b.published)}
       <div class="o-row-actions">
@@ -97,7 +97,7 @@ export async function bookEditView(el, [param], ctx, alive) {
   const isNew = param === 'new';
   const { limits } = await org.get('/books');
   let book = isNew
-    ? { title: '', subject: SUBJECT, grade: null, publisher: '', description: '', cover_id: null, pdf_id: null, published: false, problems: [] }
+    ? { title: '', subject: SUBJECT, grade: null, publisher: '', category: '', allow_download: false, description: '', cover_id: null, pdf_id: null, published: false, problems: [] }
     : await org.get(`/books/${param}`);
   if (!alive()) return;
   let pdf = book.pdf_id && book.pdf_kind === 'bookpdf' ? { file_id: book.pdf_id, name: book.pdf_name, size: book.pdf_size, page_count: book.page_count } : null;
@@ -132,14 +132,19 @@ export async function bookEditView(el, [param], ctx, alive) {
         </div>
         <div class="o-grid-2">
           ${select({ name: 'grade', label: 'Сынып', value: book.grade ?? '', options: [{ value: '', label: '— Таңдалмаған —' }, ...GRADES.map((g) => ({ value: g, label: gradeLabel(g) }))] })}
-          ${select({ name: 'publisher', label: 'Баспа', value: book.publisher || '', options: [{ value: '', label: '— Таңдалмаған —' }, ...PUBLISHERS.map((x) => ({ value: x, label: x }))] })}
+          <label class="o-field"><span class="o-label">Баспа</span><input name="publisher" maxlength="80" list="o-book-publishers" value="${esc(book.publisher || '')}" placeholder="Атамұра, Мектеп…" /></label>
         </div>
+        <label class="o-field"><span class="o-label">Санат немесе тақырып (міндетті емес)</span><input name="category" maxlength="120" list="o-book-categories" value="${esc(book.category || '')}" placeholder="Мысалы: Оқулықтар, Қосымша әдебиет, Хрестоматия" />
+          <small class="o-hint">Оқушының «Кітаптар» бетінде кітаптар осы санат бойынша топталады.</small></label>
+        <datalist id="o-book-publishers">${PUBLISHERS.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="o-book-categories"><option value="Оқулықтар"></option><option value="Қосымша әдебиет"></option><option value="Хрестоматия"></option><option value="Атлас және карталар"></option></datalist>
         <label class="o-field"><span class="o-label">Сипаттама (міндетті емес)</span><textarea name="description" rows="3" maxlength="2000">${esc(book.description || '')}</textarea></label>
         <div class="o-grid-2 o-book-files">
           ${fileField({ name: 'cover_id', kind: 'image', value: book.cover_id, label: 'Мұқаба суреті *', hint: 'JPG, PNG немесе WEBP, ең көбі 3 МБ. Тік (3:4) сурет жақсы көрінеді.' })}
           <div data-pdf-box>${pdfBox()}</div>
         </div>
         <label class="o-toggle"><input type="checkbox" name="published" ${book.published ? 'checked' : ''} /><span></span>Оқушыларға көрсету (мұқаба мен PDF толық жүктелгенде ғана)</label>
+        <label class="o-toggle"><input type="checkbox" name="allow_download" ${book.allow_download ? 'checked' : ''} /><span></span>Оқушыларға PDF файлын жүктеп алуға рұқсат беру</label>
       </form>
       <div class="o-savebar${dirty ? ' is-dirty' : ''}">
         <span>${dirty ? 'Сақталмаған өзгерістер бар' : isNew ? 'Жаңа кітап' : 'Барлық өзгеріс сақталған'}</span>
@@ -231,6 +236,8 @@ export async function bookEditView(el, [param], ctx, alive) {
       subject: form.subject.value,
       grade: form.grade.value || null,
       publisher: form.publisher.value,
+      category: form.category.value,
+      allow_download: form.allow_download.checked,
       description: form.description.value,
       cover_id: Number(form.cover_id.value) || null,
       pdf_id: pdf?.file_id || null,

@@ -553,22 +553,188 @@ function dayLayout(g, r) {
   return Math.ceil(y);
 }
 
+// ─── Overview: everything at a glance ─────────────────────────────
+const BOOK_STATUS = {
+  not_started: ['Оқылмаған', [C.text2, C.canvas]],
+  reading: ['Оқылып жатыр', [C.mid, C.midBg]],
+  finished: ['Аяқталды', [C.ok, C.okBg]],
+};
+const shortDay = (day) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return `${d}.${String(m).padStart(2, '0')}`;
+};
+const WEEK_SHORT = ['Жс', 'Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн'];
+
+function overviewLayout(g, r) {
+  const s = r.summary;
+  let y = header(g, 'КУРАТОРҒА ЕСЕП', [
+    { text: r.student, weight: 900, size: 44, color: C.white, gap: 14, lh: 1.15 },
+    { text: 'QADAM платформасындағы оқу белсенділігі', weight: 700, size: 24, color: C.white, gap: 8 },
+    { text: r.last_activity_at ? `Соңғы белсенділік: ${dbDateTime(r.last_activity_at.slice(0, 19).replace('T', ' '))}` : 'Белсенділік әлі тіркелмеген', weight: 600, size: 20, color: C.onDark2, gap: 0 },
+  ]);
+  y += 40;
+
+  // Key figures: six cards.
+  y += g.section('Негізгі көрсеткіштер', y);
+  const tiles = [
+    ['Тапсырған тест', String(s.attempts), s.tests_done ? `${s.tests_done} түрлі тест` : '', C.ink],
+    ['Аяқталған', String(s.finished), '', C.white],
+    ['Аяқталмаған', String(s.unfinished), s.unfinished ? 'басталып, жіберілмеген' : '', C.white],
+    ['Орташа нәтиже', s.average_percent === null ? '—' : `${s.average_percent}%`, 'аяқталған тесттер', C.white],
+    ['Оқыған кітап', `${s.books_finished}`, s.books_opened ? `${s.books_opened} кітап ашылған` : 'кітап ашылмаған', C.white],
+    ['Сайттағы уақыт', minutes(s.total_sec), 'барлығы', C.white],
+  ];
+  const tw = (INNER - 2 * 16) / 3;
+  tiles.forEach(([label, value, sub, bg], i) => {
+    const x = PAD + (i % 3) * (tw + 16);
+    const ty = y + Math.floor(i / 3) * 150;
+    const dark = bg === C.ink;
+    g.rect(x, ty, tw, 134, bg, 18);
+    if (!dark) g.stroke(x, ty, tw, 134, C.line, 18, 2);
+    const color = label === 'Орташа нәтиже' && s.average_percent !== null ? scoreColors(s.average_percent)[0] : dark ? C.white : C.text;
+    g.text(value, x + 22, ty + 18, { weight: 900, size: value.length > 8 ? 26 : 38, color, width: tw - 44, lh: 1.1 });
+    g.text(label.toUpperCase(), x + 22, ty + 70, { weight: 800, size: 14, color: dark ? C.onDark2 : C.muted, width: tw - 44 });
+    if (sub) g.text(sub, x + 22, ty + 94, { weight: 600, size: 15, color: dark ? C.onDark2 : C.muted, width: tw - 44, max: 1 });
+  });
+  y += 150 * 2 + 24;
+
+  // Time on the site: today, this week, all; and the last 7 days.
+  y += g.section('Сайтта өткізген уақыт', y, 'Тек бет ашық тұрып, оқушы әрекет еткен уақыт');
+  y += g.card(y, (top) => {
+    const cw = (INNER - 60 - 2 * 16) / 3;
+    [['Бүгін', s.today_sec], ['Осы аптада', s.week_sec], ['Жалпы', s.total_sec]].forEach(([label, sec], i) => {
+      const x = PAD + 30 + i * (cw + 16);
+      g.rect(x, top, cw, 100, C.paper, 14);
+      g.text(minutes(sec), x + 18, top + 16, { weight: 900, size: 28, color: C.text, width: cw - 36, lh: 1.1 });
+      g.text(label.toUpperCase(), x + 18, top + 62, { weight: 800, size: 14, color: C.muted, width: cw - 36 });
+    });
+    let h = 124;
+    const max = Math.max(60, ...r.week.map((d) => d.sec));
+    const ch = 150;
+    const bw = (INNER - 60) / 7;
+    r.week.forEach((d, i) => {
+      const x = PAD + 30 + i * bw;
+      const bh = d.sec ? Math.max(6, (ch * d.sec) / max) : 0;
+      g.rect(x + bw * 0.22, top + h + ch - bh, bw * 0.56, bh, d.day === r.today ? C.red : '#c9c5bd', 8);
+      if (!d.sec) g.rect(x + bw * 0.22, top + h + ch - 3, bw * 0.56, 3, C.line, 2);
+      if (d.sec) g.text(minutes(d.sec).replace(' мин', 'м').replace(' сағ ', 'с '), x, top + h + ch - bh - 26, { weight: 800, size: 15, color: C.text, width: bw, align: 'center' });
+      const [yy, mm, dd] = d.day.split('-').map(Number);
+      const wd = WEEK_SHORT[new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay()];
+      g.text(`${wd} ${shortDay(d.day)}`, x, top + h + ch + 10, { weight: 700, size: 14, color: d.day === r.today ? C.text : C.muted, width: bw, align: 'center' });
+    });
+    h += ch + 40;
+    const parts = [s.test_sec ? `тест тапсыру ${minutes(s.test_sec)}` : '', s.reading_sec ? `кітап оқу ${minutes(s.reading_sec)}` : ''].filter(Boolean);
+    if (parts.length) h += g.text(`Жалпы уақыттың ішінде: ${parts.join(' · ')}`, PAD + 30, top + h, { weight: 600, size: 18, color: C.text2, width: INNER - 60 });
+    return h;
+  });
+  y += 40;
+
+  // Tests: trend and history.
+  const done = r.history.filter((h) => h.status === 'finished');
+  y += g.section('Тапсырылған тесттер', y, r.history.length ? `${s.finished} аяқталған · ${s.unfinished} аяқталмаған` : '');
+  y += g.card(y, (top) => {
+    if (!r.history.length) return g.text('Әзірге тест тапсырылмаған.', PAD + 30, top, { weight: 600, size: 21, color: C.text2, width: INNER - 60 });
+    let h = 0;
+    if (done.length > 1) {
+      const shown = done.slice(0, 15).reverse();
+      const cx0 = PAD + 30 + 56;
+      const cw = INNER - 60 - 56 - 20;
+      const ch = 160;
+      for (const v of [0, 50, 100]) {
+        const gy = top + 10 + ch - (ch * v) / 100;
+        g.line([[cx0, gy], [cx0 + cw, gy]], C.line, 2, v === 50 ? [6, 8] : []);
+        g.text(`${v}%`, PAD + 30, gy - 11, { weight: 700, size: 16, color: C.muted, width: 50 });
+      }
+      const step = shown.length > 1 ? cw / (shown.length - 1) : 0;
+      const pts = shown.map((a, i) => [cx0 + i * step, top + 10 + ch - (ch * a.percent) / 100]);
+      g.line(pts, C.red, 4);
+      pts.forEach(([px, py]) => g.dot(px, py, 7, C.white, C.red));
+      h += ch + 30;
+      h += g.text(`Соңғы ${shown.length} аяқталған тесттің нәтижесі (ескіден жаңаға)`, PAD + 30, top + h, { weight: 500, size: 17, color: C.muted }) + 14;
+    }
+    const rows = r.history.slice(0, 15);
+    rows.forEach((t, i) => {
+      const ry = top + h;
+      if (i) g.rect(PAD + 30, ry - 1, INNER - 60, 1, C.line);
+      const pill = t.status === 'finished' ? [`${t.percent}%`, scoreColors(t.percent)] : ['Аяқталмады', [C.text2, C.canvas]];
+      const pw = g.width(pill[0], 900, 17) + 17 * 1.2;
+      g.pill(pill[0], PAD + INNER - 30, ry + 12, pill[1], { size: 17, right: true });
+      let rh = 12 + g.text(t.title, PAD + 30, ry + 12, { weight: 800, size: 20, color: C.text, width: INNER - 60 - pw - 20, max: 2 });
+      const meta =
+        t.status === 'finished'
+          ? `${dbDateTime(t.at)} · ${Math.round(t.score * 100) / 100}/${t.max_score} ұпай · ${testTime(t.duration_sec)} · аяқталды`
+          : `${dbDateTime(t.at)} · басталды, бірақ жіберілмеді`;
+      rh += 4 + g.text(meta, PAD + 30, ry + rh + 4, { weight: 500, size: 17, color: C.text2, width: INNER - 60 - pw - 20 });
+      h += Math.max(rh, 40) + 14;
+    });
+    if (r.history.length > rows.length) h += g.text(`Барлығы ${r.history.length} жазба, соңғы ${rows.length} көрсетілген.`, PAD + 30, top + h + 4, { weight: 500, size: 17, color: C.muted }) + 8;
+    return h;
+  });
+  y += 40;
+
+  // Books with their reading status.
+  y += g.section('Кітаптар', y, 'Кітапты ашу оны оқып шықты дегенді білдірмейді: бет 30 секундтан көп оқылса ғана есептеледі');
+  if (!r.books.length) {
+    y += g.card(y, (top) => g.text('Әзірге кітап жарияланбаған.', PAD + 30, top, { weight: 600, size: 21, color: C.text2, width: INNER - 60 }), { pad: 24 }) + 14;
+  }
+  for (const b of r.books) {
+    y +=
+      g.card(
+        y,
+        (top) => {
+          const [label, colors] = BOOK_STATUS[b.status];
+          const pw = g.width(label, 900, 18) + 18 * 1.2;
+          g.pill(label, PAD + INNER - 28, top - 2, colors, { size: 18, right: true });
+          let h = g.text(b.title, PAD + 36, top, { weight: 800, size: 23, width: INNER - 90 - pw, max: 2 });
+          const meta = [gradeLabel(b.grade), b.publisher].filter(Boolean).join(' | ');
+          if (meta) h += 4 + g.text(meta, PAD + 36, top + h + 4, { weight: 600, size: 17, color: C.muted, width: INNER - 70 });
+          if (b.page_count) {
+            const by = top + h + 16;
+            const bw = INNER - 70 - 200;
+            g.rect(PAD + 36, by, bw, 16, C.canvas, 8);
+            if (b.pages_read) g.rect(PAD + 36, by, Math.max(16, (bw * b.progress) / 100), 16, colors[0] === C.text2 ? '#b9b8b4' : colors[0], 8);
+            g.text(`${b.pages_read}/${b.page_count} бет · ${b.progress}%`, PAD + 36 + bw + 14, by - 5, { weight: 800, size: 17, color: C.text, width: 190 });
+            h += 16 + 16;
+          }
+          const facts =
+            b.status === 'not_started'
+              ? 'Әлі ашылмаған'
+              : [b.started_at ? `Бастаған: ${dbDateTime(b.started_at)}` : '', b.last_opened_at ? `Соңғы ашқан: ${dbDateTime(b.last_opened_at)}` : '', `Оқу уақыты: ${minutes(b.reading_sec)}`]
+                  .filter(Boolean)
+                  .join(' · ');
+          h += 10 + g.text(facts, PAD + 36, top + h + 10, { weight: 600, size: 17, color: C.text2, width: INNER - 70 });
+          return h + 2;
+        },
+        { pad: 22, accent: BOOK_STATUS[b.status][1][0] === C.text2 ? C.line : BOOK_STATUS[b.status][1][0] },
+      ) + 12;
+  }
+  y += 28;
+  y += footer(
+    g,
+    y,
+    `Есеп жасалды: ${dayTitle(almatyDay(r.generated_at))}, ${almatyTime(r.generated_at)} (Алматы уақыты). Уақыт 15 секундтық аралықпен, бет ашық тұрып оқушы әрекет еткенде ғана есептеледі; ұзақ әрекетсіздік, екі вкладка және бірнеше құрылғы уақытты екі есе санамайды. Кітап беттерінің 90%-ы оқылғанда «Аяқталды» деп саналады.`,
+  );
+  return Math.ceil(y);
+}
+
 /** Renders a report ('test' or 'day') to a canvas at 2× for sharp text. */
 export async function drawReport(kind, r) {
   // Kazakh letters come from the site's own Montserrat files; wait for every weight used.
   const sample = 'ҚқӘәҒғҮүҰұІіӨөҺһҢң QADAM 0123%';
   await Promise.all([500, 600, 700, 800, 900].map((w) => document.fonts.load(`${w} 24px Montserrat`, sample).catch(() => null)));
-  const scale = 2;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  const layout = kind === 'test' ? testLayout : dayLayout;
-  canvas.width = W * scale;
+  const layout = kind === 'test' ? testLayout : kind === 'overview' ? overviewLayout : dayLayout;
+  canvas.width = W * 2;
   canvas.height = 10;
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
   const g = painter(ctx);
   g.draw = false;
   const height = layout(g, r);
-  canvas.height = height * scale;
+  // 2× for sharp text, but a long report stays within what phones allow for one canvas (~16 Mpx).
+  const scale = Math.min(2, Math.sqrt(16_000_000 / (W * height)));
+  canvas.width = Math.round(W * scale);
+  canvas.height = Math.round(height * scale);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.fillStyle = C.paper;
   ctx.fillRect(0, 0, W, height);

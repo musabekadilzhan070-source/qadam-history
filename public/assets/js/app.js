@@ -15,6 +15,7 @@ import { readerView } from './views/reader.js';
 import { reportView } from './views/report.js';
 import { profileView } from './views/profile.js';
 import { feedbackView } from './views/feedback.js';
+import { linkTestView } from './views/link.js';
 import { welcomeView, loginView, registerView, forgotView, resetView } from './views/auth.js';
 
 const NAV = [
@@ -43,6 +44,8 @@ const ROUTES = [
   { re: /^\/profile\/?$/, nav: 'profile', view: profileView, title: 'Профиль' },
   { re: /^\/feedback\/?$/, nav: 'feedback', view: feedbackView, title: 'Ұсыныстар' },
   // Pages open to guests; everything else needs an account.
+  // A test sent as a link by the organizer: anyone with the link, signed in or not.
+  { re: /^\/t\/([0-9a-f]{16})\/?$/, view: linkTestView, title: 'Тест', guest: true, open: true },
   { re: /^\/welcome\/?$/, view: welcomeView, title: 'Кіру немесе тіркелу', guest: true },
   { re: /^\/login\/?$/, view: loginView, title: 'Кіру', guest: true },
   { re: /^\/register\/?$/, view: registerView, title: 'Тіркелу', guest: true },

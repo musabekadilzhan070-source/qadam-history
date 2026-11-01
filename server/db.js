@@ -257,6 +257,84 @@ CREATE INDEX IF NOT EXISTS idx_materials_topic ON materials(topic_id, position);
 CREATE INDEX IF NOT EXISTS idx_persons_topic ON persons(topic_id, position);
 `;
 
+// Test links (a test sent as a link, taken without an account), started tests, kept totals of
+// active time and the pages a student really read.
+const SCHEMA_V3 = `
+-- One row per test: its permanent link id and how the link may be used. Kept apart from the
+-- content tables, so publishing or restoring a version never changes a link.
+CREATE TABLE IF NOT EXISTS test_links (
+  test_id INTEGER PRIMARY KEY,
+  share_id TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  opens_at TEXT,
+  closes_at TEXT,
+  retakes INTEGER NOT NULL DEFAULT 1,
+  show_result INTEGER NOT NULL DEFAULT 1,
+  show_answers INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- The test exactly as it was handed out through its link: an attempt is graded on its own
+-- version even if the organizer edits the test meanwhile.
+CREATE TABLE IF NOT EXISTS link_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  test_id INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (test_id, hash)
+);
+-- Every start through a link. finished_at is set once, when the answers are graded.
+-- participant: a random id kept in the browser's cookie, not a person's identity.
+CREATE TABLE IF NOT EXISTS link_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  test_id INTEGER NOT NULL,
+  version_id INTEGER NOT NULL,
+  test_title TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  participant TEXT NOT NULL,
+  served TEXT NOT NULL,
+  started_ms INTEGER NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,
+  correct INTEGER,
+  total INTEGER,
+  score INTEGER,
+  max_score INTEGER,
+  percent INTEGER,
+  duration_sec INTEGER,
+  answers TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_link_attempts_test ON link_attempts(test_id, id);
+CREATE INDEX IF NOT EXISTS idx_link_attempts_participant ON link_attempts(test_id, participant);
+-- A signed-in student opened a test; attempt_id is filled in when that test is submitted.
+CREATE TABLE IF NOT EXISTS test_starts (
+  nonce TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  test_id INTEGER NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  attempt_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_test_starts_user ON test_starts(user_id, started_at);
+-- Active time of old days, summed before their 15-second slots are removed.
+CREATE TABLE IF NOT EXISTS activity_days (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  book_id INTEGER NOT NULL DEFAULT 0,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (user_id, day, kind, book_id)
+);
+-- A page counts as read after 30 s of active time on it in one day; kept for good.
+CREATE TABLE IF NOT EXISTS book_pages_read (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id INTEGER NOT NULL,
+  page INTEGER NOT NULL,
+  first_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, book_id, page)
+);
+`;
+
 const COLUMNS = [
   ['topics', 'published', 'INTEGER NOT NULL DEFAULT 1'],
   ['topics', 'image_id', 'INTEGER'],
@@ -293,6 +371,9 @@ const COLUMNS = [
   ['tests', 'book_year', 'INTEGER'],
   ['tests', 'book_authors', "TEXT NOT NULL DEFAULT ''"],
   ['tests', 'book_pages', "TEXT NOT NULL DEFAULT ''"],
+  // A book's section in the list, and whether students may save its PDF.
+  ['books', 'category', "TEXT NOT NULL DEFAULT ''"],
+  ['books', 'allow_download', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 async function addMissingColumns() {
@@ -306,7 +387,14 @@ export async function migrate() {
   if (config.dbUrl.startsWith('file:')) await db.execute('PRAGMA journal_mode = WAL');
   await db.executeMultiple(SCHEMA);
   await db.executeMultiple(SCHEMA_V2);
+  await db.executeMultiple(SCHEMA_V3);
   await addMissingColumns();
+  // Pages read before book_pages_read existed: from the slots still kept.
+  await db.execute(
+    `INSERT OR IGNORE INTO book_pages_read (user_id, book_id, page)
+     SELECT user_id, book_id, page FROM activity_slots WHERE kind = 'book' AND page IS NOT NULL
+     GROUP BY user_id, day, book_id, page HAVING COUNT(*) * 15 >= 30`,
+  );
   // First release kept one test per topic as topic_id on questions: give each such topic a test row.
   await db.batch(
     [

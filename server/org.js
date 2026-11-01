@@ -13,6 +13,8 @@ import { orgFeedbackRouter } from './feedback.js';
 import { orgBooksRouter } from './books.js';
 import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicateKey } from './transfer.js';
 import { gradeOf, publisherOf, textbookOf } from './catalog.js';
+import { latin } from './latin.js';
+import { orgLinksRouter, ensureLinks } from './links.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -91,22 +93,6 @@ const optId = (v) => {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : null;
 };
-
-const TRANSLIT = {
-  а: 'a', ә: 'a', б: 'b', в: 'v', г: 'g', ғ: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', қ: 'k',
-  л: 'l', м: 'm', н: 'n', ң: 'n', о: 'o', ө: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ұ: 'u', ү: 'u', ф: 'f', х: 'h',
-  һ: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'y', і: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya',
-};
-
-const latin = (title) =>
-  String(title)
-    .toLowerCase()
-    .split('')
-    .map((c) => TRANSLIT[c] ?? c)
-    .join('')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
 
 async function uniqueSlug(title, exceptId = null) {
   const base = latin(title) || 'takyryp';
@@ -230,6 +216,8 @@ async function draftTests() {
 }
 
 async function state() {
+  await ensureLinks();
+  const links = new Map((await all('SELECT test_id, share_id, enabled FROM test_links')).map((l) => [l.test_id, l]));
   const uses = await fileUsage();
   const live = new Set((await published()).tests.map((x) => x.id));
   return {
@@ -245,6 +233,8 @@ async function state() {
       question_count: gradable(questions).length,
       problems: testProblems({ ...x, questions }),
       live: live.has(x.id),
+      share_id: links.get(x.id)?.share_id ?? null,
+      link_enabled: Boolean(links.get(x.id)?.enabled),
     })),
     persons: (await all('SELECT * FROM persons ORDER BY position, id')).map((p) => ({ ...p, facts: JSON.parse(p.facts || '[]') })),
     files: (await all("SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files WHERE kind NOT IN ('bookpdf', 'pdf_upload') ORDER BY id DESC")).map(
@@ -802,6 +792,7 @@ orgRouter.delete(
 // ─── Suggestions from students (feedback.js) ─────────────────────
 orgRouter.use('/feedback', orgFeedbackRouter);
 orgRouter.use('/books', orgBooksRouter);
+orgRouter.use('/links', orgLinksRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });

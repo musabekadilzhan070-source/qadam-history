@@ -51,6 +51,10 @@ export async function readerView(el, [id], app, alive) {
           <button type="button" class="reader-btn" data-act="zoom-in" aria-label="Үлкейту">+</button>
           <button type="button" class="reader-btn reader-spread" data-act="spread" data-spread aria-pressed="false" title="Екі бетті қатар көрсету">2 бет</button>
         </div>
+        <div class="reader-group">
+          <button type="button" class="reader-btn reader-text" data-act="full" aria-pressed="false" title="Кітапты бүкіл экранға ашу">Толық экран</button>
+          ${book.allow_download ? '<button type="button" class="reader-btn reader-text" data-act="download" title="PDF файлын құрылғыға сақтау">PDF жүктеу</button>' : ''}
+        </div>
         <form class="reader-search" data-search role="search">
           <input type="search" placeholder="Кітаптан іздеу" aria-label="Кітаптан іздеу" data-q />
           <button type="submit" class="reader-btn" aria-label="Іздеу">${icon('search')}</button>
@@ -67,6 +71,7 @@ export async function readerView(el, [id], app, alive) {
 
   const $ = (sel) => el.querySelector(sel);
   const stage = $('[data-stage]');
+  const readerEl = $('.reader');
   let statusSticky = false; // a search result stays shown while its page is drawn
   const status = (text, sticky = false) => {
     statusSticky = sticky;
@@ -80,6 +85,7 @@ export async function readerView(el, [id], app, alive) {
   let fit = 'page'; // paged mode without zoom: the whole page on the screen, or the full width
   let zoom = null; // paged mode: a fixed scale instead of fitting
   let spread = false;
+  let full = false;
   let saveTimer = null;
   let stopped = false;
   const sizes = new Map(); // page → {w, h} at scale 1
@@ -145,13 +151,17 @@ export async function readerView(el, [id], app, alive) {
   }
 
   // ─── Paged mode ─────────────────────────────────────────────────
-  const siteTop = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 64;
+  // In full screen the reader itself scrolls (it covers the site); otherwise the page does.
+  const siteTop = () => (full ? 0 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 64);
+  const scrollTop = () => (full ? readerEl.scrollTop : window.scrollY);
+  const scrollToY = (y) => (full ? readerEl.scrollTo({ top: Math.max(0, y) }) : window.scrollTo({ top: Math.max(0, y) }));
+  const viewTop = () => (full ? readerEl.getBoundingClientRect().top : 0);
   /** Height taken at the top of the screen by the site bar and the sticky reader toolbar. */
   const topOffset = () => siteTop() + 8 + $('.reader-bar').offsetHeight + 12;
   /** After turning a page, bring the page's top under the toolbar if it is scrolled away. */
   const alignPaged = () => {
-    const y = stage.getBoundingClientRect().top + window.scrollY - topOffset();
-    if (Math.abs(window.scrollY - y) > 4 && window.scrollY > y) window.scrollTo({ top: Math.max(0, y) });
+    const y = stage.getBoundingClientRect().top - viewTop() + scrollTop() - topOffset();
+    if (Math.abs(scrollTop() - y) > 4 && scrollTop() > y) scrollToY(y);
   };
   const spreadOn = () => mode === 'paged' && spread && matchMedia(SPREAD).matches;
   /** The cover is alone, then pages go in pairs as in a printed book: 1 | 2–3 | 4–5 … */
@@ -283,8 +293,7 @@ export async function readerView(el, [id], app, alive) {
   function scrollToPage(n) {
     const slot = slots[n - 1];
     if (!slot) return;
-    const y = slot.getBoundingClientRect().top + window.scrollY - siteTop() - 12;
-    window.scrollTo({ top: Math.max(0, y) });
+    scrollToY(slot.getBoundingClientRect().top - viewTop() + scrollTop() - siteTop() - 12);
   }
 
   function teardownScroll() {
@@ -382,6 +391,61 @@ export async function readerView(el, [id], app, alive) {
     status(anyText ? `«${q.trim()}» кітаптан табылмады.` : 'Бұл кітапта іздеуге болатын мәтін жоқ (беттері сурет ретінде сканерленген).');
   }
 
+  // Full screen: the browser's own full screen where it exists (not on iPhone), and in every
+  // browser the reader covers the whole window, so only the book and its toolbar are seen.
+  async function setFull(on) {
+    const keep = page;
+    full = on;
+    readerEl.classList.toggle('is-full', on);
+    document.documentElement.classList.toggle('reader-full-open', on);
+    const btn = $('[data-act="full"]');
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? 'Шығу' : 'Толық экран';
+    btn.title = on ? 'Толық экраннан шығу (Esc)' : 'Кітапты бүкіл экранға ашу';
+    try {
+      if (on && readerEl.requestFullscreen && !document.fullscreenElement) await readerEl.requestFullscreen();
+      if (!on && document.fullscreenElement) await document.exitFullscreen();
+    } catch {
+      /* the covering layout works without the browser's full screen */
+    }
+    requestAnimationFrame(() => {
+      if (mode === 'paged') renderPaged().catch(() => {});
+      else {
+        for (const n of [...drawn.keys()]) drawSlot(n);
+        scrollToPage(keep);
+      }
+    });
+  }
+
+  // The organizer allowed saving the PDF: its pieces are joined into one file on the device.
+  async function download(btn) {
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const { file_id: fileId, chunks } = book.pdf;
+      const parts = [];
+      for (let i = 0; i < chunks; i += 1) {
+        status(`PDF дайындалуда: ${Math.round((i / chunks) * 100)}%`, true);
+        const res = await fetch(`/api/books/${book.id}/pdf/${fileId}/${i}`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error();
+        parts.push(await res.arrayBuffer());
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qadam-kitap-${book.id}.pdf`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      status('PDF файлы сақталды.', true);
+    } catch {
+      status('PDF жүктелмеді. Интернетті тексеріп, қайталаңыз.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   el.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'prev') turn(-1);
@@ -389,6 +453,8 @@ export async function readerView(el, [id], app, alive) {
     else if (act === 'zoom-in') setZoom(1);
     else if (act === 'zoom-out') setZoom(-1);
     else if (act === 'fit') setZoom(0);
+    else if (act === 'full') setFull(!full);
+    else if (act === 'download') download(e.target.closest('[data-act]'));
     else if (act === 'spread') {
       spread = !spread;
       $('[data-spread]').setAttribute('aria-pressed', String(spread));
@@ -407,6 +473,7 @@ export async function readerView(el, [id], app, alive) {
     search = null;
   });
   const onKey = (e) => {
+    if (e.key === 'Escape' && full && !document.fullscreenElement) return setFull(false);
     if (mode !== 'paged' || e.target.closest('input, textarea, select')) return;
     if (e.key === 'ArrowRight') turn(1);
     if (e.key === 'ArrowLeft') turn(-1);
@@ -441,6 +508,11 @@ export async function readerView(el, [id], app, alive) {
   };
   window.addEventListener('resize', onResize);
   window.addEventListener('scroll', onScroll, { passive: true });
+  readerEl.addEventListener('scroll', onScroll, { passive: true });
+  const onFullChange = () => {
+    if (!document.fullscreenElement && full) setFull(false);
+  };
+  document.addEventListener('fullscreenchange', onFullChange);
 
   await applyMode();
 
@@ -451,6 +523,9 @@ export async function readerView(el, [id], app, alive) {
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('scroll', onScroll);
+    document.removeEventListener('fullscreenchange', onFullChange);
+    document.documentElement.classList.remove('reader-full-open');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     activity.set({ kind: 'site' });
     task?.destroy();
   };

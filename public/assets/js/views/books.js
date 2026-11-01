@@ -19,6 +19,19 @@ const card = (b) => `
     </a>
   </li>`;
 
+/** Books grouped by the organizer's category, in their order; no categories → one plain grid. */
+function groups(books) {
+  const out = [];
+  for (const b of books) {
+    const title = b.category || '';
+    let g = out.find((x) => x.title === title);
+    if (!g) out.push((g = { title, books: [] }));
+    g.books.push(b);
+  }
+  if (out.length > 1) for (const g of out) if (!g.title) g.title = 'Басқа кітаптар';
+  return out;
+}
+
 export async function booksView(el, _params, _app, alive) {
   const { books } = await api.get('/api/books');
   if (!alive()) return;
@@ -26,7 +39,9 @@ export async function booksView(el, _params, _app, alive) {
     ${pageHead({ eyebrow: 'Оқулықтар', title: 'Кітаптар', text: 'Оқулықты ашып, осы сайттың ішінде оқыңыз. Соңғы оқыған бетіңіз сақталады.' })}
     ${
       books.length
-        ? `<ul class="book-grid">${books.map(card).join('')}</ul>`
+        ? groups(books)
+            .map((g) => `${g.title ? `<h2 class="book-group">${esc(g.title)}</h2>` : ''}<ul class="book-grid">${g.books.map(card).join('')}</ul>`)
+            .join('')
         : '<div class="panel empty"><p>Әзірге кітап жарияланбаған. Организатор кітап қосқанда осы жерде көрінеді.</p></div>'
     }`;
   // A cover that fails to load becomes a plain title card instead of a broken image.
