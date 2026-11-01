@@ -7,20 +7,24 @@ import { activity } from '../activity.js';
 
 // The book reader, inside QADAM (no new tab, no other site). Every page is drawn by pdf.js from
 // the PDF itself, so fonts, Kazakh letters, tables, pictures and colours look as in the original;
-// a scanned book is shown as its page pictures.
+// a scanned book is shown as its page pictures. Nothing is turned into HTML text.
 //
-// The layout follows the screen and changes on resize or rotation:
-//  • wide screen (computer, landscape tablet): one page at a time (or two side by side), prev/next,
-//    fit the whole page or the width, zoom;
-//  • narrow screen (phone, portrait tablet): every page one under another, full width, scrolled.
-//    Only the pages near the screen are drawn; far ones are dropped again to save memory.
+// One layout on every screen, as on a phone: the book opens on its first page and every page
+// lies under the previous one, read by scrolling down with the wheel, touchpad or finger.
+// • Phone: pages take the full width.
+// • Laptop and computer: pages stand in a centred column wide enough to read comfortably and
+//   never wider than the screen; − / + make the column narrower or wider (never wider than the
+//   screen, so there is no sideways scrolling). Page proportions are always the PDF's own.
+// Only the pages near the screen are drawn; far ones are dropped again to save memory.
 
-const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 const norm = (s) => s.toLocaleLowerCase('kk').replace(/\s+/g, ' ');
-const PAGED = '(min-width: 900px)';
-const SPREAD = '(min-width: 1200px)';
 // iOS Safari refuses canvases above ~16.7 million pixels; stay under it.
 const MAX_PIXELS = 16_000_000;
+/** The default column on a wide screen: an A4 page at about 1.5× its printed size. */
+const READ_WIDTH = 920;
+const MIN_WIDTH = 320;
+/** Below this stage width the page takes the whole width and the zoom buttons are hidden. */
+const NARROW = 700;
 
 /** Pixel ratio for a page shown at cssW × cssH: sharp on retina screens, within the canvas limit. */
 function pixelRatio(cssW, cssH, cap) {
@@ -34,7 +38,7 @@ export async function readerView(el, [id], app, alive) {
   app.setTitle(book.title);
   const meta = [book.subject, gradeLabel(book.grade), book.publisher].filter(Boolean).join(' · ');
   el.innerHTML = `
-    <div class="reader">
+    <div class="reader" data-mode="scroll">
       <div class="reader-head">
         <a class="link-more reader-back" href="/books" data-link>${icon('back')} Кітаптар</a>
         <div class="reader-title"><h1>${esc(book.title)}</h1><p>${esc(meta)}</p></div>
@@ -45,11 +49,10 @@ export async function readerView(el, [id], app, alive) {
           <label class="reader-page"><input type="number" inputmode="numeric" min="1" value="1" aria-label="Бет нөмірі" data-page /><span>/ <b data-total>…</b></span></label>
           <button type="button" class="reader-btn" data-act="next" aria-label="Келесі бет">${icon('arrow')}</button>
         </div>
-        <div class="reader-group" data-paged>
+        <div class="reader-group" data-zoombar>
           <button type="button" class="reader-btn" data-act="zoom-out" aria-label="Кішірейту">−</button>
-          <button type="button" class="reader-btn reader-zoom" data-act="fit" data-zoom title="Бетті экранға / енге сыйдыру">100%</button>
+          <button type="button" class="reader-btn reader-zoom" data-act="fit" data-zoom title="Әдепкі өлшем / экран еніне сыйдыру">100%</button>
           <button type="button" class="reader-btn" data-act="zoom-in" aria-label="Үлкейту">+</button>
-          <button type="button" class="reader-btn reader-spread" data-act="spread" data-spread aria-pressed="false" title="Екі бетті қатар көрсету">2 бет</button>
         </div>
         <div class="reader-group">
           <button type="button" class="reader-btn reader-text" data-act="full" aria-pressed="false" title="Кітапты бүкіл экранға ашу">Толық экран</button>
@@ -61,11 +64,8 @@ export async function readerView(el, [id], app, alive) {
         </form>
       </div>
       <p class="reader-status" data-status role="status">Кітап жүктелуде…</p>
+      <div class="reader-resume" data-resume hidden></div>
       <div class="reader-stage" data-stage></div>
-      <div class="reader-foot" data-paged>
-        <button type="button" class="btn btn-ghost btn-sm" data-act="prev">${icon('back')} Алдыңғы</button>
-        <button type="button" class="btn btn-dark btn-sm" data-act="next">Келесі ${icon('arrow', 'icon icon-arrow')}</button>
-      </div>
       <div class="reader-float" data-float aria-hidden="true"></div>
     </div>`;
 
@@ -80,11 +80,10 @@ export async function readerView(el, [id], app, alive) {
   };
   let doc = null;
   let task = null;
-  let page = Math.max(1, book.last_page || 1);
-  let mode = null; // 'paged' | 'scroll'
-  let fit = 'page'; // paged mode without zoom: the whole page on the screen, or the full width
-  let zoom = null; // paged mode: a fixed scale instead of fitting
-  let spread = false;
+  // The book always opens on its first page; the page where the student stopped is offered.
+  let page = 1;
+  const lastPage = Math.max(1, book.last_page || 1);
+  let colW = null; // the column width chosen with − / + (null: the default for the screen)
   let full = false;
   let saveTimer = null;
   let stopped = false;
@@ -102,7 +101,6 @@ export async function readerView(el, [id], app, alive) {
   }
   if (!alive()) return task.destroy();
   const total = doc.numPages;
-  page = Math.min(page, total);
   $('[data-total]').textContent = total;
   $('[data-page]').max = total;
   activity.set({ kind: 'book', book_id: book.id, page });
@@ -123,8 +121,8 @@ export async function readerView(el, [id], app, alive) {
     sizes.set(n, { w: base.width, h: base.height });
     const scale = cssW / base.width;
     const cssH = base.height * scale;
-    // A scrolled book keeps several pages drawn at once: a little less sharpness, far less memory.
-    const ratio = pixelRatio(cssW, cssH, mode === 'scroll' ? 2 : 3);
+    // Several pages are kept drawn at once: up to 2× sharpness, within the memory a phone has.
+    const ratio = pixelRatio(cssW, cssH, 2);
     const viewport = p.getViewport({ scale: scale * ratio });
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
@@ -141,63 +139,53 @@ export async function readerView(el, [id], app, alive) {
     // Not while the student is typing a page number into the box.
     if (document.activeElement !== $('[data-page]')) $('[data-page]').value = page;
     $('[data-float]').textContent = `${page} / ${total}`;
-    const step = spreadOn() ? pagesOf(page).length : 1;
     el.querySelectorAll('[data-act="prev"]').forEach((b) => (b.disabled = page <= 1));
-    el.querySelectorAll('[data-act="next"]').forEach((b) => (b.disabled = page + step - 1 >= total));
+    el.querySelectorAll('[data-act="next"]').forEach((b) => (b.disabled = page >= total));
     activity.page(page);
     activity.touch();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => api.post(`/api/books/${book.id}/progress`, { page, page_count: total }).catch(() => {}), 1200);
   }
 
-  // ─── Paged mode ─────────────────────────────────────────────────
   // In full screen the reader itself scrolls (it covers the site); otherwise the page does.
   const siteTop = () => (full ? 0 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 64);
   const scrollTop = () => (full ? readerEl.scrollTop : window.scrollY);
   const scrollToY = (y) => (full ? readerEl.scrollTo({ top: Math.max(0, y) }) : window.scrollTo({ top: Math.max(0, y) }));
   const viewTop = () => (full ? readerEl.getBoundingClientRect().top : 0);
   /** Height taken at the top of the screen by the site bar and the sticky reader toolbar. */
-  const topOffset = () => siteTop() + 8 + $('.reader-bar').offsetHeight + 12;
-  /** After turning a page, bring the page's top under the toolbar if it is scrolled away. */
-  const alignPaged = () => {
-    const y = stage.getBoundingClientRect().top - viewTop() + scrollTop() - topOffset();
-    if (Math.abs(scrollTop() - y) > 4 && scrollTop() > y) scrollToY(y);
-  };
-  const spreadOn = () => mode === 'paged' && spread && matchMedia(SPREAD).matches;
-  /** The cover is alone, then pages go in pairs as in a printed book: 1 | 2–3 | 4–5 … */
-  const pagesOf = (n) => {
-    if (!spreadOn() || n === 1) return [n];
-    const left = n % 2 === 0 ? n : n - 1;
-    return left + 1 <= total ? [left, left + 1] : [left];
-  };
-  let drawing = null;
+  const topOffset = () => siteTop() + (getComputedStyle($('.reader-bar')).position === 'sticky' ? 8 + $('.reader-bar').offsetHeight : 0) + 12;
 
-  async function renderPaged() {
-    if (stopped || mode !== 'paged') return;
-    const current = (drawing = {});
-    const list = pagesOf(page);
-    const dims = await Promise.all(list.map(sizeOf));
-    if (current !== drawing) return;
-    const gap = 12;
-    const availW = Math.max(200, stage.clientWidth - 2 - gap * (list.length - 1));
-    // The whole page fits under the sticky top bar and the reader's toolbar.
-    // At the top of the page the title is above the stage too: the page still fits on the screen.
-    const availH = Math.max(320, window.innerHeight - Math.max(topOffset(), stage.getBoundingClientRect().top) - 16);
-    const sumW = dims.reduce((s, d) => s + d.w, 0);
-    const maxH = Math.max(...dims.map((d) => d.h));
-    const fitWidth = availW / sumW;
-    const fitPage = Math.min(fitWidth, availH / maxH);
-    const scale = zoom ?? (fit === 'page' ? fitPage : fitWidth);
-    const canvases = list.map(() => document.createElement('canvas'));
-    await Promise.all(list.map((n, i) => paint(canvases[i], n, dims[i].w * scale).then((t) => t.promise)));
-    if (current !== drawing || stopped) return;
-    const row = document.createElement('div');
-    row.className = 'reader-spreadrow';
-    row.append(...canvases);
-    stage.replaceChildren(row);
-    $('[data-zoom]').textContent = `${Math.round(scale * 100)}%`;
-    $('[data-zoom]').setAttribute('aria-label', zoom ? 'Бетті экранға сыйдыру' : fit === 'page' ? 'Енге сыйдыру' : 'Бетті экранға сыйдыру');
-    if (!statusSticky) status('');
+  // ─── Column width ───────────────────────────────────────────────
+  const narrow = () => stage.clientWidth < NARROW;
+  /** The width the pages are shown at: never wider than the screen. */
+  const columnWidth = () => {
+    const room = Math.max(200, stage.clientWidth);
+    if (narrow()) return room;
+    return Math.round(Math.min(room, Math.max(MIN_WIDTH, colW ?? READ_WIDTH)));
+  };
+  function applyColumn() {
+    const w = columnWidth();
+    readerEl.style.setProperty('--col', `${w}px`);
+    $('[data-zoombar]').hidden = narrow();
+    const base = sizes.get(page) || sizes.get(1);
+    if (base) $('[data-zoom]').textContent = `${Math.round((w / base.w) * 100)}%`;
+    const room = stage.clientWidth;
+    el.querySelector('[data-act="zoom-in"]').disabled = w >= room - 1;
+    el.querySelector('[data-act="zoom-out"]').disabled = w <= MIN_WIDTH;
+    $('[data-zoom]').setAttribute('aria-label', w >= room - 1 && colW ? 'Әдепкі өлшемге қайту' : 'Экран еніне сыйдыру');
+    return w;
+  }
+  /** − / + / fit: a narrower or wider column, kept on the page being read. */
+  function setZoom(dir) {
+    const keep = page;
+    const now = columnWidth();
+    const room = stage.clientWidth;
+    if (dir === 0) colW = colW !== null && now >= room - 1 ? null : room;
+    else if (dir > 0) colW = Math.min(room, now * 1.2);
+    else colW = Math.max(MIN_WIDTH, now / 1.2);
+    applyColumn();
+    for (const n of [...drawn.keys()]) drawSlot(n);
+    requestAnimationFrame(() => scrollToPage(keep));
   }
 
   // ─── Scroll mode ────────────────────────────────────────────────
@@ -232,7 +220,7 @@ export async function readerView(el, [id], app, alive) {
   }
 
   async function drawSlot(n) {
-    if (stopped || mode !== 'scroll') return;
+    if (stopped) return;
     const slot = slots[n - 1];
     const width = slot.clientWidth;
     const have = drawn.get(n);
@@ -275,7 +263,7 @@ export async function readerView(el, [id], app, alive) {
   /** The page under the middle of the screen is the one being read. */
   let scrollRaf = 0;
   const onScroll = () => {
-    if (mode !== 'scroll' || scrollRaf) return;
+    if (scrollRaf) return;
     scrollRaf = requestAnimationFrame(() => {
       scrollRaf = 0;
       const mid = window.innerHeight / 2;
@@ -293,7 +281,7 @@ export async function readerView(el, [id], app, alive) {
   function scrollToPage(n) {
     const slot = slots[n - 1];
     if (!slot) return;
-    scrollToY(slot.getBoundingClientRect().top - viewTop() + scrollTop() - siteTop() - 12);
+    scrollToY(slot.getBoundingClientRect().top - viewTop() + scrollTop() - topOffset());
   }
 
   function teardownScroll() {
@@ -305,62 +293,23 @@ export async function readerView(el, [id], app, alive) {
     stage.replaceChildren();
   }
 
-  // ─── Switching layouts ──────────────────────────────────────────
-  async function applyMode() {
-    const next = matchMedia(PAGED).matches ? 'paged' : 'scroll';
-    $('[data-spread]').hidden = !matchMedia(SPREAD).matches;
-    if (next === mode) {
-      if (mode === 'paged') {
-        if (zoom === null) renderPaged().catch(() => {});
-      } else {
-        // Wider or narrower pages: draw the visible ones again at the new width.
-        for (const n of [...drawn.keys()]) drawSlot(n);
-      }
-      return;
-    }
-    mode = next;
-    el.querySelector('.reader').dataset.mode = mode;
-    el.querySelectorAll('[data-paged]').forEach((x) => (x.hidden = mode !== 'paged'));
-    $('[data-float]').classList.remove('is-on');
-    if (mode === 'paged') {
-      teardownScroll();
-      show(page);
-    } else {
-      drawing = null;
-      await sizeOf(page).catch(() => null);
-      if (stopped) return;
-      buildScroll();
-      setPage(page);
-      if (page > 1) requestAnimationFrame(() => scrollToPage(page));
-    }
+  // ─── Building and moving ────────────────────────────────────────
+  async function build() {
+    await sizeOf(1).catch(() => null);
+    if (stopped) return;
+    applyColumn();
+    buildScroll();
+    setPage(1);
+    if (!statusSticky) status('');
   }
 
   function show(n, keepStatus = false) {
     if (!keepStatus) statusSticky = false;
-    let next = Math.max(1, Math.min(total, Math.round(Number(n)) || 1));
-    if (spreadOn()) next = pagesOf(next)[0];
+    const next = Math.max(1, Math.min(total, Math.round(Number(n)) || 1));
     setPage(next);
-    if (mode === 'paged') {
-      alignPaged();
-      renderPaged().catch(() => status('Бұл бетті көрсету мүмкін болмады.'));
-    }
-    else scrollToPage(next);
+    scrollToPage(next);
   }
-  const turn = (dir) => {
-    if (dir > 0) show(page + pagesOf(page).length);
-    else show(spreadOn() ? pagesOf(Math.max(1, page - 1))[0] : page - 1);
-  };
-
-  function setZoom(dir) {
-    const shown = parseInt($('[data-zoom]').textContent, 10) / 100 || 1;
-    if (dir === 0) {
-      // Fit button: back to fitting if zoomed, otherwise switch between whole page and full width.
-      if (zoom !== null) zoom = null;
-      else fit = fit === 'page' ? 'width' : 'page';
-    } else if (dir > 0) zoom = ZOOMS.find((z) => z > shown + 0.01) ?? ZOOMS[ZOOMS.length - 1];
-    else zoom = [...ZOOMS].reverse().find((z) => z < shown - 0.01) ?? ZOOMS[0];
-    renderPaged().catch(() => {});
-  }
+  const turn = (dir) => show(page + dir);
 
   // Text search from the current page on; a scanned book has no text to find.
   let search = null;
@@ -409,11 +358,9 @@ export async function readerView(el, [id], app, alive) {
       /* the covering layout works without the browser's full screen */
     }
     requestAnimationFrame(() => {
-      if (mode === 'paged') renderPaged().catch(() => {});
-      else {
-        for (const n of [...drawn.keys()]) drawSlot(n);
-        scrollToPage(keep);
-      }
+      applyColumn();
+      for (const n of [...drawn.keys()]) drawSlot(n);
+      scrollToPage(keep);
     });
   }
 
@@ -455,11 +402,10 @@ export async function readerView(el, [id], app, alive) {
     else if (act === 'fit') setZoom(0);
     else if (act === 'full') setFull(!full);
     else if (act === 'download') download(e.target.closest('[data-act]'));
-    else if (act === 'spread') {
-      spread = !spread;
-      $('[data-spread]').setAttribute('aria-pressed', String(spread));
-      show(page);
-    }
+    else if (act === 'resume') {
+      $('[data-resume]').hidden = true;
+      show(lastPage);
+    } else if (act === 'resume-close') $('[data-resume]').hidden = true;
   });
   $('[data-page]').addEventListener('change', (e) => {
     e.target.blur();
@@ -474,36 +420,24 @@ export async function readerView(el, [id], app, alive) {
   });
   const onKey = (e) => {
     if (e.key === 'Escape' && full && !document.fullscreenElement) return setFull(false);
-    if (mode !== 'paged' || e.target.closest('input, textarea, select')) return;
+    if (e.target.closest('input, textarea, select')) return;
     if (e.key === 'ArrowRight') turn(1);
     if (e.key === 'ArrowLeft') turn(-1);
   };
   document.addEventListener('keydown', onKey);
-  // Swipe left/right turns the page in paged mode (a landscape tablet) when not zoomed in.
-  let touchX = null;
-  stage.addEventListener('touchstart', (e) => {
-    touchX = mode === 'paged' && e.touches.length === 1 && stage.scrollWidth <= stage.clientWidth + 2 ? e.touches[0].clientX : null;
-  }, { passive: true });
-  stage.addEventListener('touchend', (e) => {
-    if (touchX === null) return;
-    const dx = e.changedTouches[0].clientX - touchX;
-    if (Math.abs(dx) > 60) turn(dx < 0 ? 1 : -1);
-    touchX = null;
-  }, { passive: true });
   let resizeTimer = null;
   let lastWidth = window.innerWidth;
-  let lastHeight = window.innerHeight;
   const onResize = () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       // A phone's address bar showing or hiding changes only the height: no redraw needed then.
       const widthChanged = Math.abs(window.innerWidth - lastWidth) > 1;
-      const heightChanged = Math.abs(window.innerHeight - lastHeight) > 80;
       lastWidth = window.innerWidth;
-      lastHeight = window.innerHeight;
-      if (!widthChanged && !(heightChanged && mode === 'paged')) return;
+      if (!widthChanged) return;
       const keep = page;
-      applyMode().then(() => mode === 'scroll' && widthChanged && scrollToPage(keep)).catch(() => {});
+      applyColumn();
+      for (const n of [...drawn.keys()]) drawSlot(n);
+      requestAnimationFrame(() => scrollToPage(keep));
     }, 200);
   };
   window.addEventListener('resize', onResize);
@@ -514,7 +448,14 @@ export async function readerView(el, [id], app, alive) {
   };
   document.addEventListener('fullscreenchange', onFullChange);
 
-  await applyMode();
+  await build();
+  if (lastPage > 1 && lastPage <= total) {
+    const box = $('[data-resume]');
+    box.innerHTML = `<span>Соңғы рет <b>${lastPage}-бетте</b> тоқтадыңыз.</span>
+      <button type="button" class="btn btn-sm" data-act="resume">${lastPage}-беттен жалғастыру</button>
+      <button type="button" class="reader-btn" data-act="resume-close" aria-label="Жабу">${icon('cross')}</button>`;
+    box.hidden = false;
+  }
 
   return () => {
     stopped = true;

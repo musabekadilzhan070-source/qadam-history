@@ -3,7 +3,7 @@ import express from 'express';
 import { config } from './config.js';
 import { all, get, run } from './db.js';
 import { assembleQuestions, readyQuestions, settingsOf, pickUnits, forStudent, gradable, grade } from './questions.js';
-import { makeToken, readToken, timeAllowed } from './quiz.js';
+import { makeToken, readToken, timeAllowed, reworkSettings } from './quiz.js';
 import { parseCookies } from './auth.js';
 import { writeCsv, writeXlsx } from './sheets.js';
 import { latin } from './latin.js';
@@ -20,6 +20,10 @@ import { latin } from './latin.js';
 // • A browser keeps a random participant id in a cookie. It decides retakes and lets a student
 //   come back to an unfinished test after a reload. It is not a person's identity: the same name
 //   typed twice is never merged.
+// • After the test the student sees every question with their answer and, by the organizer's
+//   choice, the correct one, and may work again only on the wrong ones («Қате жауаптарды қайта
+//   тапсыру»). A rework is its own row (kind 'rework', parent_id, root_id): the first result never
+//   changes, and a rework can be reworked again until nothing is wrong.
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const failWith = (status, message, extra = {}) => Object.assign(new Error(message), { status, extra });
@@ -71,6 +75,9 @@ async function savedTest(testId) {
     questions: readyQuestions(assembleQuestions(rows, options)),
   };
 }
+
+/** A rework has no overall timer and no question limit, as on the student side of the site. */
+const settingsFor = (row, test) => (row.kind === 'rework' ? reworkSettings(test.settings) : test.settings);
 
 const versions = new Map();
 async function versionById(id) {
@@ -142,7 +149,7 @@ const cleanName = (raw) => String(raw ?? '').replace(/\s+/g, ' ').trim();
 /** An unfinished attempt of this browser that can still be continued. */
 async function openAttempt(testId, participant, test) {
   const row = await get(
-    'SELECT * FROM link_attempts WHERE test_id = ? AND participant = ? AND finished_at IS NULL ORDER BY id DESC LIMIT 1',
+    "SELECT * FROM link_attempts WHERE test_id = ? AND participant = ? AND kind = 'test' AND finished_at IS NULL ORDER BY id DESC LIMIT 1",
     testId,
     participant,
   );
@@ -155,7 +162,7 @@ async function openAttempt(testId, participant, test) {
 
 /** Any earlier attempt of this browser: a finished one, or one started and left. */
 async function finishedBy(testId, participant) {
-  return get('SELECT id FROM link_attempts WHERE test_id = ? AND participant = ? LIMIT 1', testId, participant);
+  return get("SELECT id FROM link_attempts WHERE test_id = ? AND participant = ? AND kind = 'test' LIMIT 1", testId, participant);
 }
 
 // ─── Students (no account) ───────────────────────────────────────
@@ -223,36 +230,100 @@ publicLinksRouter.post(
       );
       row = await get('SELECT * FROM link_attempts WHERE id = ?', lastInsertRowid);
     }
-    const served = JSON.parse(row.served);
-    const units = servedUnits(test, served);
-    const allowed = timeAllowed(test.settings, served.length);
-    const elapsed = Math.floor((Date.now() - row.started_ms) / 1000);
-    res.json({
-      attempt_id: row.id,
-      name: row.name,
-      resumed: elapsed > 5,
-      title: test.title,
-      topic: { title: test.topic_title },
-      question_count: served.length,
-      max_score: gradable(units).reduce((s, q) => s + q.points, 0),
-      // What is left of the time limit (a resumed attempt keeps its own clock).
-      time_limit_sec: allowed ? Math.max(1, allowed - elapsed) : 0,
-      question_time_sec: test.settings.question_time_sec,
-      pass_percent: test.settings.pass_percent,
-      units: units.map((u) => forStudent(u, test.settings)),
-      token: await makeToken({ la: row.id, t: link.test_id, s: row.started_ms }),
-    });
+    res.json(await paperOf(link, row, test));
+  }),
+);
+
+/** The questions of an attempt for the player, with a signed session token. */
+async function paperOf(link, row, test) {
+  const settings = settingsFor(row, test);
+  const served = JSON.parse(row.served);
+  const units = servedUnits(test, served);
+  const allowed = timeAllowed(settings, served.length);
+  const elapsed = Math.floor((Date.now() - row.started_ms) / 1000);
+  return {
+    attempt_id: row.id,
+    kind: row.kind,
+    name: row.name,
+    resumed: elapsed > 5,
+    title: test.title,
+    topic: { title: test.topic_title },
+    question_count: served.length,
+    max_score: gradable(units).reduce((s, q) => s + q.points, 0),
+    // What is left of the time limit (a resumed attempt keeps its own clock).
+    time_limit_sec: allowed ? Math.max(1, allowed - elapsed) : 0,
+    question_time_sec: settings.question_time_sec,
+    pass_percent: settings.pass_percent,
+    units: units.map((u) => forStudent(u, settings)),
+    token: await makeToken({ la: row.id, t: link.test_id, s: row.started_ms }),
+  };
+}
+
+/** The finished attempt a token names, only for the browser that took it. */
+async function ownFinished(req, link) {
+  const session = await readToken(req.body?.token);
+  if (!session?.la || session.t !== link.test_id) throw failWith(400, 'Тест сессиясы жарамсыз. Сілтемені қайта ашыңыз.');
+  const row = await get('SELECT * FROM link_attempts WHERE id = ? AND test_id = ?', session.la, link.test_id);
+  const participant = parseCookies(req.headers.cookie)[PARTICIPANT];
+  if (!row || !participant || row.participant !== participant) throw failWith(404, 'Тест тапсыру табылмады. Сілтемені қайта ашыңыз.');
+  if (!row.finished_at) throw failWith(400, 'Алдымен тестті аяқтаңыз.');
+  return row;
+}
+
+/** Ids of the wrongly answered questions of a finished attempt, graded again on its own version. */
+async function wrongIds(row) {
+  const test = await versionById(row.version_id);
+  if (!test) return [];
+  const answers = JSON.parse(row.answers || '{}');
+  return grade(test, JSON.parse(row.served), answers, settingsFor(row, test)).items.filter((i) => !i.is_correct).map((i) => i.id);
+}
+
+// «Қате жауаптарды қайта тапсыру»: a new attempt of only the questions this browser answered
+// wrongly in the given finished attempt (the whole test or an earlier rework).
+publicLinksRouter.post(
+  '/:slug/rework',
+  wrap(async (req, res) => {
+    const link = await linkBySlug(req.params.slug);
+    if (!link) throw failWith(404, 'Мұндай тест табылмады. Сілтемені тексеріңіз.');
+    const state = linkState(link);
+    if (!state.open) throw failWith(403, state.message, { reason: state.reason });
+    if (!link.show_result) throw failWith(403, 'Организатор нәтижені жасырған: қате жауаптарды қайта тапсыру қолжетімсіз.');
+    const parent = await ownFinished(req, link);
+    const test = await versionById(parent.version_id);
+    const wrong = await wrongIds(parent);
+    if (!test || !wrong.length) throw failWith(400, 'Барлық сұраққа дұрыс жауап бердіңіз! Қайта тапсыратын қате жоқ.', { reason: 'none' });
+    // A second click or a reload continues the same unfinished rework.
+    let row = await get(
+      "SELECT * FROM link_attempts WHERE parent_id = ? AND kind = 'rework' AND finished_at IS NULL AND started_ms > ? ORDER BY id DESC LIMIT 1",
+      parent.id, Date.now() - RESUME_MS,
+    );
+    if (!row) {
+      if (tooManyStarts(req.ip)) throw failWith(429, 'Тым көп сұраныс. Бірнеше минуттан кейін қайталаңыз.');
+      const { lastInsertRowid } = await run(
+        `INSERT INTO link_attempts (test_id, version_id, test_title, name, participant, served, started_ms, kind, parent_id, root_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'rework', ?, ?)`,
+        link.test_id, parent.version_id, parent.test_title, parent.name, parent.participant, JSON.stringify(wrong), Date.now(), parent.id, parent.root_id || parent.id,
+      );
+      row = await get('SELECT * FROM link_attempts WHERE id = ?', lastInsertRowid);
+    }
+    res.json(await paperOf(link, row, test));
   }),
 );
 
 /** What the student sees at the end, by the organizer's choice. */
-function endView(link, row, items) {
+async function endView(link, row, items) {
   const showResult = Boolean(link.show_result);
+  const root = row.kind === 'rework' ? await get('SELECT correct, total, score, max_score, percent FROM link_attempts WHERE id = ?', row.root_id) : null;
   return {
     finished: true,
+    kind: row.kind,
     name: row.name,
     title: row.test_title,
     show_result: showResult,
+    show_answers: Boolean(link.show_answers),
+    can_rework: showResult && linkState(link).open && row.correct < row.total,
+    // A rework shows the first result next to it: that one never changes.
+    ...(showResult && root ? { original: root } : {}),
     ...(showResult
       ? {
           correct: row.correct,
@@ -263,7 +334,9 @@ function endView(link, row, items) {
           duration_sec: row.duration_sec,
         }
       : {}),
-    ...(showResult && link.show_answers ? { items } : {}),
+    // Every question with the student's answer and whether it is right; the correct answers
+    // themselves only when the organizer allows it (reviewItem leaves them out otherwise).
+    ...(showResult ? { items } : {}),
   };
 }
 
@@ -272,7 +345,7 @@ async function storedItems(row, showAnswers) {
   const test = await versionById(row.version_id);
   if (!test) return [];
   const answers = JSON.parse(row.answers || '{}');
-  return grade(test, JSON.parse(row.served), answers, { ...test.settings, show_answers: showAnswers }).items;
+  return grade(test, JSON.parse(row.served), answers, { ...settingsFor(row, test), show_answers: showAnswers }).items;
 }
 
 publicLinksRouter.post(
@@ -287,13 +360,14 @@ publicLinksRouter.post(
     let row = await get('SELECT * FROM link_attempts WHERE id = ? AND test_id = ?', session.la, link.test_id);
     if (!row) throw failWith(404, 'Тест тапсыру табылмады. Сілтемені қайта ашыңыз.');
     // Already graded (a repeated request): the same result, never a second row.
-    if (row.finished_at) return res.json(endView(link, row, await storedItems(row, Boolean(link.show_answers))));
+    if (row.finished_at) return res.json(await endView(link, row, await storedItems(row, Boolean(link.show_answers))));
     const test = await versionById(row.version_id);
     const served = JSON.parse(row.served);
     const elapsed = Math.max(0, Math.round((Date.now() - row.started_ms) / 1000));
-    const allowed = timeAllowed(test.settings, served.length);
+    const settings = settingsFor(row, test);
+    const allowed = timeAllowed(settings, served.length);
     if (allowed && elapsed > allowed + GRACE_SEC) throw failWith(400, 'Тест уақыты әлдеқашан аяқталған. Сілтемені қайта ашып, қайтадан бастаңыз.');
-    const result = grade(test, served, answers, { ...test.settings, show_answers: Boolean(link.show_answers) });
+    const result = grade(test, served, answers, { ...settings, show_answers: Boolean(link.show_answers) });
     const stored = Object.fromEntries(result.stored.map(({ question, answer }) => [question.id, answer]));
     const { changes } = await run(
       `UPDATE link_attempts SET finished_at = datetime('now'), correct = ?, total = ?, score = ?, max_score = ?, percent = ?, duration_sec = ?, answers = ?
@@ -301,7 +375,7 @@ publicLinksRouter.post(
       result.correct, result.total, result.score, result.max_score, result.percent, Math.min(elapsed, 6 * 3600), JSON.stringify(stored), row.id,
     );
     row = await get('SELECT * FROM link_attempts WHERE id = ?', row.id);
-    res.json(endView(link, row, changes ? result.items : await storedItems(row, Boolean(link.show_answers))));
+    res.json(await endView(link, row, changes ? result.items : await storedItems(row, Boolean(link.show_answers))));
   }),
 );
 
@@ -333,8 +407,8 @@ orgLinksRouter.get(
     await ensureLinks();
     const rows = await all(
       `SELECT l.*, x.title, x.topic_id,
-              (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.finished_at IS NOT NULL) AS finished,
-              (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.finished_at IS NULL) AS unfinished
+              (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.kind = 'test' AND a.finished_at IS NOT NULL) AS finished,
+              (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.kind = 'test' AND a.finished_at IS NULL) AS unfinished
        FROM test_links l JOIN tests x ON x.id = l.test_id ORDER BY x.topic_id, x.position, x.id`,
     );
     res.json({ links: rows.map((l) => ({ ...linkView(l), title: l.title, finished: l.finished, unfinished: l.unfinished })) });
@@ -375,22 +449,42 @@ orgLinksRouter.put(
 );
 
 const RESULT_SQL = `SELECT a.id, a.test_id, COALESCE(x.title, a.test_title) AS test_title, a.name, a.started_at, a.finished_at,
-  a.correct, a.total, a.score, a.max_score, a.percent, a.duration_sec, a.started_ms, a.version_id, a.served
+  a.correct, a.total, a.score, a.max_score, a.percent, a.duration_sec, a.started_ms, a.version_id, a.served, a.kind, a.parent_id, a.root_id
   FROM link_attempts a LEFT JOIN tests x ON x.id = a.test_id`;
 
-async function resultRows(testId) {
-  const rows = testId ? await all(`${RESULT_SQL} WHERE a.test_id = ? ORDER BY a.id DESC LIMIT 5000`, testId) : await all(`${RESULT_SQL} ORDER BY a.id DESC LIMIT 5000`);
+/**
+ * Link results, newest first. withReworks: rework rows too (the export); otherwise only whole
+ * tests, each with a summary of its reworks (they never change the first result).
+ */
+async function resultRows(testId, { withReworks = false } = {}) {
+  const where = testId ? 'WHERE a.test_id = ?' : '';
+  const args = testId ? [testId] : [];
+  const rows = await all(`${RESULT_SQL} ${where} ORDER BY a.id DESC LIMIT 20000`, ...args);
+  const reworksOf = new Map();
+  for (const r of rows) {
+    if (r.kind !== 'rework' || !r.finished_at) continue;
+    if (!reworksOf.has(r.root_id)) reworksOf.set(r.root_id, []);
+    reworksOf.get(r.root_id).push(r);
+  }
   const out = [];
   for (const r of rows) {
+    if (r.kind === 'rework' && !withReworks) continue;
     let status = r.finished_at ? 'finished' : 'unfinished';
     if (!r.finished_at) {
       // Still running only while its time (or the resume window) lasts.
       const v = await versionById(r.version_id);
-      const allowed = v ? timeAllowed(v.settings, JSON.parse(r.served).length) : 0;
+      const allowed = v ? timeAllowed(settingsFor(r, v), JSON.parse(r.served).length) : 0;
       if (Date.now() - r.started_ms < (allowed ? (allowed + GRACE_SEC) * 1000 : RESUME_MS)) status = 'in_progress';
     }
     const { served, started_ms, version_id, ...rest } = r;
-    out.push({ ...rest, status });
+    const view = { ...rest, status };
+    if (r.kind === 'test') {
+      const list = reworksOf.get(r.id) || [];
+      // Newest first in `rows`: the last rework is the first of the list.
+      view.reworks = list.length;
+      view.rework_last = list[0] ? { correct: list[0].correct, total: list[0].total, finished_at: list[0].finished_at } : null;
+    }
+    out.push(view);
   }
   return out;
 }
@@ -413,15 +507,16 @@ orgLinksRouter.get(
   wrap(async (req, res) => {
     const testId = Number(req.query.test_id) || null;
     const format = req.query.format === 'csv' ? 'csv' : 'xlsx';
-    const rows = await resultRows(testId);
+    const rows = await resultRows(testId, { withReworks: true });
+    const kindText = (r) => (r.kind === 'rework' ? `Қатемен жұмыс (№${r.root_id} тапсыруы)` : 'Негізгі тест');
     const table = [
-      ['№', 'Тест', 'Оқушының аты-жөні', 'Басталған уақыты', 'Аяқталған уақыты', 'Ұпай', 'Максималды ұпай', 'Пайыз', 'Дұрыс', 'Сұрақ саны', 'Орындау уақыты', 'Мәртебесі'],
+      ['№', 'Тапсыру ID', 'Тест', 'Оқушының аты-жөні', 'Түрі', 'Басталған уақыты', 'Аяқталған уақыты', 'Ұпай', 'Максималды ұпай', 'Пайыз', 'Дұрыс', 'Қате', 'Сұрақ саны', 'Орындау уақыты', 'Мәртебесі'],
       ...rows.map((r, i) => [
-        i + 1, r.test_title, r.name, dbTime(r.started_at), dbTime(r.finished_at),
-        r.score ?? '', r.max_score ?? '', r.percent == null ? '' : `${r.percent}%`, r.correct ?? '', r.total ?? '', duration(r.duration_sec), STATUS_TEXT[r.status],
+        i + 1, r.id, r.test_title, r.name, kindText(r), dbTime(r.started_at), dbTime(r.finished_at),
+        r.score ?? '', r.max_score ?? '', r.percent == null ? '' : `${r.percent}%`, r.correct ?? '', r.total == null ? '' : r.total - r.correct, r.total ?? '', duration(r.duration_sec), STATUS_TEXT[r.status],
       ]),
     ];
-    const buf = format === 'csv' ? writeCsv(table) : writeXlsx([{ name: 'Нәтижелер', rows: table, widths: [5, 34, 28, 18, 18, 8, 10, 8, 8, 10, 14, 13] }]);
+    const buf = format === 'csv' ? writeCsv(table) : writeXlsx([{ name: 'Нәтижелер', rows: table, widths: [5, 10, 34, 28, 24, 18, 18, 8, 10, 8, 8, 8, 10, 14, 13] }]);
     const title = testId ? rows[0]?.test_title || (await get('SELECT title FROM tests WHERE id = ?', testId))?.title || 'test' : 'barlyk-testter';
     res.set('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.set('Content-Disposition', `attachment; filename="qadam-${latin(title) || 'test'}-natizheler.${format}"`);
@@ -436,15 +531,23 @@ orgLinksRouter.get(
   wrap(async (req, res) => {
     const row = await get('SELECT * FROM link_attempts WHERE id = ?', Number(req.params.id));
     if (!row) throw failWith(404, 'Нәтиже табылмады.');
-    const [view] = (await resultRows(row.test_id)).filter((r) => r.id === row.id);
-    res.json({ ...view, items: row.finished_at ? await storedItems(row, true) : [] });
+    const [view] = (await resultRows(row.test_id, { withReworks: true })).filter((r) => r.id === row.id);
+    // The whole test first, then each rework of its wrong answers, oldest first.
+    const reworkRows = row.kind === 'test' ? await all("SELECT * FROM link_attempts WHERE root_id = ? AND kind = 'rework' AND finished_at IS NOT NULL ORDER BY id", row.id) : [];
+    const reworks = [];
+    for (const r of reworkRows) {
+      reworks.push({ id: r.id, finished_at: r.finished_at, correct: r.correct, total: r.total, score: r.score, max_score: r.max_score, percent: r.percent, duration_sec: r.duration_sec, items: await storedItems(r, true) });
+    }
+    res.json({ ...view, items: row.finished_at ? await storedItems(row, true) : [], rework_list: reworks });
   }),
 );
 
 orgLinksRouter.delete(
   '/results/:id(\\d+)',
   wrap(async (req, res) => {
-    const { changes } = await run('DELETE FROM link_attempts WHERE id = ?', Number(req.params.id));
+    const id = Number(req.params.id);
+    // A whole test goes with its reworks.
+    const { changes } = await run('DELETE FROM link_attempts WHERE id = ? OR root_id = ?', id, id);
     if (!changes) throw failWith(404, 'Нәтиже табылмады.');
     res.json({ ok: true });
   }),

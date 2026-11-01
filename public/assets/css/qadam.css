@@ -3407,12 +3407,6 @@ body.is-guest main {
   background: var(--white);
   box-shadow: 0 2px 10px rgb(10 10 12 / 0.12);
 }
-.reader-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 14px;
-}
 /* Controls of the other layout are hidden with the hidden attribute; display rules must not undo it. */
 .reader [hidden] {
   display: none !important;
@@ -3453,22 +3447,7 @@ html.reader-full-open body {
   color: var(--white);
   background: var(--ink);
 }
-/* Paged layout: one page, or two side by side, fitted to the screen. */
-.reader-spreadrow {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 12px;
-  vertical-align: top;
-}
-.reader-spread[aria-pressed='true'] {
-  color: var(--white);
-  background: var(--ink, #131315);
-}
-.reader-spread {
-  min-width: 64px;
-  font-size: 13px;
-}
-/* Scroll layout (phone, portrait tablet): every page full width, one under another. */
+/* Every page under the previous one: full width on a phone, a centred column on wider screens. */
 .reader[data-mode='scroll'] .reader-stage {
   overflow: visible;
   min-height: 0;
@@ -3480,6 +3459,34 @@ html.reader-full-open body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  max-width: var(--col, 100%);
+  margin: 0 auto;
+}
+@media (min-width: 700px) {
+  .reader-scroll {
+    gap: 16px;
+  }
+}
+.reader-resume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  margin: 0 auto 12px;
+  max-width: var(--col, 100%);
+  font-size: 14px;
+  background: var(--paper);
+  border-radius: 12px;
+}
+.reader-resume span {
+  flex: 1 1 200px;
+}
+.reader-resume .reader-btn {
+  min-width: 36px;
+  height: 36px;
+  background: transparent;
 }
 .reader-pg {
   position: relative;
@@ -3852,6 +3859,53 @@ html.reader-full-open body {
   font-size: 12px;
   color: var(--muted);
 }
+.link-score li.is-ok b,
+.link-rework-sum .is-ok {
+  color: var(--ok);
+}
+.link-score li.is-bad b,
+.link-rework-sum .is-bad {
+  color: var(--red);
+}
+.link-rework-sum {
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  line-height: 1.5;
+  background: var(--paper);
+  border-radius: 12px;
+}
+.link-allright {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  margin: 0 0 14px;
+  font-weight: 800;
+  color: #17603c;
+  background: #e3f4ea;
+  border: 1px solid #b9e2c9;
+  border-radius: 12px;
+}
+.link-allright .icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+.link-rework {
+  margin-bottom: 8px;
+}
+.link-end .link-note {
+  margin: 0 0 16px;
+}
+.link-who-tag {
+  padding: 2px 8px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--white);
+  background: var(--red);
+  border-radius: 999px;
+}
 .link-hidden-result {
   padding: 14px 16px;
   margin: 0 0 18px;
@@ -3867,6 +3921,6 @@ html.reader-full-open body {
     grid-template-columns: minmax(0, 1fr);
   }
   .link-score ul {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

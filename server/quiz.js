@@ -167,7 +167,7 @@ export function submitTest(test, body, { userId }) {
 // so the original result stays as it was.
 
 /** Whole-test limits do not fit a short rework: no overall timer and no question limit. */
-const reworkSettings = (settings) => ({ ...settings, time_limit_min: 0, question_limit: 0, shuffle_questions: false });
+export const reworkSettings = (settings) => ({ ...settings, time_limit_min: 0, question_limit: 0, shuffle_questions: false });
 
 /** Test questions (in the test's order) that were answered wrongly; a context keeps only its wrong children. */
 export function reworkUnits(questions, wrongIds) {

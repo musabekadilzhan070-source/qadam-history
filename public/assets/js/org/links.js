@@ -77,7 +77,7 @@ function cardHtml(link, dirty) {
         <label class="o-toggle"><input type="checkbox" data-link-field="enabled" ${link.enabled ? 'checked' : ''} /><span></span>Сілтеме арқылы тапсыру қосулы</label>
         <label class="o-toggle"><input type="checkbox" data-link-field="retakes" ${link.retakes ? 'checked' : ''} /><span></span>Қайта тапсыруға рұқсат беру</label>
         <label class="o-toggle"><input type="checkbox" data-link-field="show_result" ${link.show_result ? 'checked' : ''} /><span></span>Соңында оқушыға нәтижесін көрсету</label>
-        <label class="o-toggle"><input type="checkbox" data-link-field="show_answers" ${link.show_answers ? 'checked' : ''} ${link.show_result ? '' : 'disabled'} /><span></span>Соңында дұрыс жауаптарды көрсету</label>
+        <label class="o-toggle"><input type="checkbox" data-link-field="show_answers" ${link.show_answers ? 'checked' : ''} ${link.show_result ? '' : 'disabled'} /><span></span>Соңында дұрыс жауаптарды да көрсету (өшірулі болса, оқушы тек өз жауабының дұрыс-қатесін көреді)</label>
       </div>
       <div class="o-grid-2">
         <label class="o-field"><span class="o-label">Басталу уақыты (міндетті емес)</span><input type="datetime-local" data-link-field="opens_at" value="${toLocal(link.opens_at)}" /></label>
@@ -141,6 +141,7 @@ const COLUMNS = [
   { key: 'score', label: 'Нәтиже' },
   { key: 'percent', label: 'Пайыз' },
   { key: 'duration_sec', label: 'Уақыты' },
+  { key: 'reworks', label: 'Қатемен жұмыс' },
   { key: 'started_at', label: 'Тапсырған уақыты' },
   { key: 'status', label: 'Мәртебесі' },
 ];
@@ -192,6 +193,7 @@ export async function linksView(el, _params, ctx, alive) {
                 <td>${r.status === 'finished' ? `${r.score}/${r.max_score}` : '—'}</td>
                 <td>${r.status === 'finished' ? `<b>${r.percent}%</b>` : '—'}</td>
                 <td>${r.status === 'finished' ? minSec(r.duration_sec) : '—'}</td>
+                <td>${r.reworks ? `${r.reworks} рет<small class="o-muted o-cell-note">соңғысы: ${r.rework_last.correct}/${r.rework_last.total} дұрыс</small>` : '—'}</td>
                 <td>${dbTime(r.started_at)}</td>
                 <td>${STATUS[r.status]}</td>
                 <td class="o-table-actions"><button type="button" class="btn btn-ghost btn-sm" data-open ${r.status === 'finished' ? '' : 'disabled'}>Жұмысын ашу</button>
@@ -248,7 +250,17 @@ export async function linksView(el, _params, ctx, alive) {
           <span><b>${w.score}/${w.max_score}</b> ұпай</span><span><b>${w.percent}%</b></span>
           <span>Дұрыс: <b>${w.correct}/${w.total}</b></span><span>Уақыты: <b>${minSec(w.duration_sec)}</b></span>
           <span>Тапсырған: <b>${dbTime(w.started_at)}</b></span></div>
-        <div class="o-work-review">${reviewList(w.items)}</div>`,
+        <p class="o-muted">Бастапқы нәтиже. Қатемен жұмыс оны өзгертпейді, төменде бөлек көрсетіледі.</p>
+        <div class="o-work-review">${reviewList(w.items)}</div>
+        ${(w.rework_list || [])
+          .map(
+            (r, i) => `<div class="o-work-rework">
+              <h3>Қатемен жұмыс ${i + 1}</h3>
+              <div class="o-work-head"><span>Дұрыс: <b>${r.correct}/${r.total}</b></span><span>Әлі қате: <b>${r.total - r.correct}</b></span>
+                <span>Уақыты: <b>${minSec(r.duration_sec)}</b></span><span>Аяқталған: <b>${dbTime(r.finished_at)}</b></span></div>
+              <div class="o-work-review">${reviewList(r.items)}</div></div>`,
+          )
+          .join('')}`,
       buttons: [{ label: 'Жабу', value: true }],
     });
   }
