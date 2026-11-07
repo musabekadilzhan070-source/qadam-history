@@ -15,6 +15,7 @@ import { exportFile, templateFile, rowsToQuestions, dropMissingImages, duplicate
 import { gradeOf, publisherOf, textbookOf, TOPIC_GRADES, TOPIC_PUBLISHERS } from './catalog.js';
 import { latin } from './latin.js';
 import { orgLinksRouter, ensureLinks } from './links.js';
+import { orgShelvesRouter } from './shelves.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -599,6 +600,7 @@ orgRouter.delete(
         ? [
             ['DELETE FROM options WHERE question_id IN (SELECT q.id FROM questions q JOIN tests x ON x.id = q.test_id WHERE x.topic_id = ?)', id],
             ['DELETE FROM questions WHERE test_id IN (SELECT id FROM tests WHERE topic_id = ?)', id],
+            ['DELETE FROM period_book_tests WHERE test_id IN (SELECT id FROM tests WHERE topic_id = ?)', id],
             ['DELETE FROM tests WHERE topic_id = ?', id],
             ['UPDATE materials SET topic_id = NULL, published = 0 WHERE topic_id = ?', id],
             ['DELETE FROM persons WHERE topic_id = ?', id],
@@ -807,6 +809,7 @@ orgRouter.delete(
       ['DELETE FROM options WHERE question_id IN (SELECT id FROM questions WHERE test_id = ?)', id],
       ['DELETE FROM questions WHERE test_id = ?', id],
       ['DELETE FROM tests WHERE id = ?', id],
+      ['DELETE FROM period_book_tests WHERE test_id = ?', id],
     ]);
     // A deleted test also leaves the students' pages at once.
     if ((await published()).tests.some((x) => x.id === id)) await publishTest(id, false, `Тест өшірілді: ${title}`);
@@ -818,6 +821,7 @@ orgRouter.delete(
 orgRouter.use('/feedback', orgFeedbackRouter);
 orgRouter.use('/books', orgBooksRouter);
 orgRouter.use('/links', orgLinksRouter);
+orgRouter.use('/period-books', orgShelvesRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });

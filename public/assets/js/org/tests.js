@@ -6,6 +6,7 @@ import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testPro
 import { GRADES, PUBLISHERS, SUBJECT, gradeLabel, tagLine } from '../catalog.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { copyLink, linkUrl, mountLinkCard } from './links.js';
+import { mountShelfCard } from './shelves.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
 // Test builder: settings, seven question formats, checks before publishing and a student preview.
@@ -552,6 +553,9 @@ export async function testEditView(el, [id], ctx, alive) {
   let dirty = false;
   ctx.setDirtyCheck(() => dirty);
   const linkCache = {};
+  const shelfCache = {};
+  // The books card follows the saved topic: the server links a test only to books of that period.
+  let savedTopicId = test.topic_id;
 
   const draw = () => {
     const problems = testProblems(test);
@@ -584,6 +588,7 @@ export async function testEditView(el, [id], ctx, alive) {
       </div>
       ${settingsCard(test, ctx)}
       <div data-link-card></div>
+      <div data-shelf-card></div>
       <ol class="o-questions">${test.questions
         .map((q, i, all) => questionCard(q, `questions.${i}`, q.type === 'context' ? `${i + 1}-блок` : `${i + 1}-сұрақ`, { first: i === 0, last: i === all.length - 1 }))
         .join('')}</ol>
@@ -598,6 +603,7 @@ export async function testEditView(el, [id], ctx, alive) {
     const holder = el.querySelector('[data-link-card]');
     holder.dataset.dirty = dirty ? '1' : '';
     mountLinkCard(holder, test.id, linkCache, { dirty }).catch((err) => toast(err.message, 'error'));
+    mountShelfCard(el.querySelector('[data-shelf-card]'), { id: test.id, saved_topic_id: savedTopicId }, ctx, shelfCache).catch((err) => toast(err.message, 'error'));
   };
 
   const redraw = (focus) => {
@@ -696,6 +702,7 @@ export async function testEditView(el, [id], ctx, alive) {
     }
     const out = await busy(el.querySelector('[data-act="save"]'), async () => {
       test = await org.put(`/tests/${test.id}`, payload(test));
+      savedTopicId = test.topic_id;
       dirty = false;
       if (!quiet) toast(test.live_state === 'changed' ? 'Сақталды. Оқушылар жаңа нұсқаны «Өзгерістерді жариялау» басқаннан кейін көреді.' : 'Тест сақталды.');
       await ctx.refreshStatus();

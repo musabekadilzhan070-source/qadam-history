@@ -2,8 +2,13 @@ import { api } from '../api.js';
 import { esc } from '../util.js';
 import { pageHead } from '../components.js';
 import { gradeLabel } from '../catalog.js';
+import { icon } from '../art.js';
 
 // «Кітаптар»: textbook covers in a grid; a cover opens the book in the reader inside QADAM.
+
+/** The official note on where the books come from, shown above the shelves. */
+const NOTICE =
+  'Бұл бөлімде ұсынылған кітаптар Қазақстан тарихы пәні бойынша ҰБТ спецификациясында қамтылған оқу әдебиеттеріне сәйкес жинақталған. Кітаптардың электрондық нұсқалары OKULYK.KZ платформасынан алынған.';
 
 const coverUrl = (b) => `/api/files/${b.cover_id}?v=${b.cover_version}`;
 
@@ -37,6 +42,7 @@ export async function booksView(el, _params, _app, alive) {
   if (!alive()) return;
   el.innerHTML = `
     ${pageHead({ eyebrow: 'Оқулықтар', title: 'Кітаптар', text: 'Оқулықты ашып, осы сайттың ішінде оқыңыз. Соңғы оқыған бетіңіз сақталады.' })}
+    <aside class="official-note" role="note">${icon('info', 'icon official-note-icon')}<p>${NOTICE}</p></aside>
     ${
       books.length
         ? groups(books)

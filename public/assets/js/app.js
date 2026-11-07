@@ -5,7 +5,7 @@ import { loading, errorBox } from './components.js';
 import { site } from './site.js';
 import { activity } from './activity.js';
 import { homeView } from './views/home.js';
-import { periodsView, periodView } from './views/periods.js';
+import { periodsView, periodView, periodBookView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
 import { resultsView, attemptView } from './views/results.js';
@@ -32,6 +32,7 @@ const ROUTES = [
   { re: /^\/$/, nav: 'home', view: homeView, title: '' },
   { re: /^\/periods\/?$/, nav: 'periods', view: periodsView, title: 'Тарихи кезеңдер' },
   { re: /^\/periods\/([\w-]+)\/?$/, nav: 'periods', view: periodView },
+  { re: /^\/periods\/([\w-]+)\/books\/(\d+)\/?$/, nav: 'periods', view: periodBookView },
   { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
