@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "check": "env -u RESEND_API_KEY -u TURSO_DATABASE_URL -u TURSO_AUTH_TOKEN -u DATA_DIR -u DB_FILE -u VERCEL -u COOKIE_SECURE -u TRUST_PROXY -u SITE_URL npm test",
     "test": "node --test tests/api.test.js tests/org.test.js tests/transfer.test.js tests/books.test.js tests/links.test.js tests/shelves.test.js"
   },
   "dependencies": {
