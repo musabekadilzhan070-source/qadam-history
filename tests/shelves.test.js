@@ -193,3 +193,30 @@ test('period books: organizer links books and tests; students see only what is a
   ({ body: left } = await org('GET', '/api/org/period-books'));
   assert.ok(!left.entries.some((e) => e.test_ids.includes(t1)), 'links of a deleted test are gone');
 });
+
+test('existing books are linked to periods once, by grade and publisher', async () => {
+  const { linkExistingBooksOnce } = await import('../server/shelves.js');
+  const org = await organizer();
+  const { body: st } = await org('GET', '/api/org/state');
+  const period = st.periods[2];
+  const topic = st.topics.find((t) => t.period_id === period.id);
+  const r = await org('POST', '/api/org/tests', { title: '10 Мектеп тесті', topic_id: topic.id, grade: 10, publisher: 'Мектеп', questions: Q });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.grade, 10);
+  const other = await newTest(org, topic.id, 'Тегі жоқ тест');
+  const bookId = await book(org, 'Қазақстан тарихы 10', 10, 'Мектеп');
+
+  await linkExistingBooksOnce();
+  let { body } = await org('GET', '/api/org/period-books');
+  const mine = body.entries.filter((e) => e.book_id === bookId);
+  assert.equal(mine.length, 1, 'one entry, only on the period that has matching tests');
+  assert.equal(mine[0].period_id, period.id);
+  assert.deepEqual(mine[0].test_ids, [r.body.id]);
+  assert.ok(!mine[0].test_ids.includes(other));
+
+  // Once only: what the organizer removes stays removed.
+  await org('DELETE', `/api/org/period-books/${mine[0].id}`);
+  await linkExistingBooksOnce();
+  ({ body } = await org('GET', '/api/org/period-books'));
+  assert.ok(!body.entries.some((e) => e.book_id === bookId));
+});
