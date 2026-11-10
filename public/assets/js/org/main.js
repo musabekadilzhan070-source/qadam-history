@@ -10,6 +10,7 @@ import { testsView, testEditView } from './tests.js';
 import { imagesView } from './images.js';
 import { booksView, bookEditView } from './books.js';
 import { linksView } from './links.js';
+import { shelvesView } from './shelves.js';
 import { iconsView } from './icons.js';
 import { siteView } from './site.js';
 import { publishView } from './publish.js';
@@ -26,6 +27,7 @@ const ROUTES = [
   { re: /^\/organizer\/links\/?$/, nav: 'links', view: linksView, title: 'Сілтеме арқылы тапсырылған тесттер' },
   { re: /^\/organizer\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/organizer\/books\/(new|\d+)\/?$/, nav: 'books', view: bookEditView, title: 'Кітап' },
+  { re: /^\/organizer\/period-books\/?$/, nav: 'shelves', view: shelvesView, title: 'Кезең кітаптары' },
   { re: /^\/organizer\/images\/?$/, nav: 'images', view: imagesView, title: 'Суреттер' },
   { re: /^\/organizer\/emblems\/?$/, nav: 'emblems', view: emblemsView, title: 'Эмблемалар кітапханасы' },
   { re: /^\/organizer\/students\/?$/, nav: 'students', view: studentsView, title: 'Оқушылар' },

@@ -16,7 +16,7 @@ import {
   tokenHash,
 } from './auth.js';
 import { mailConfigured, sendMail } from './mail.js';
-import { listPeriods, getPeriod, listTests, siteInfo, totals } from './content.js';
+import { listPeriods, getPeriod, getPeriodBook, listTests, siteInfo, totals } from './content.js';
 import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail, startRework, submitRework, textbook } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
@@ -90,6 +90,12 @@ const publicUser = (u) => ({ id: u.id, username: u.username, email: u.email ?? n
 // The whole student site is behind sign-in: content is served to signed-in students only.
 app.get('/api/overview', requireUser, wrap(async (req, res) => {
   res.json({ totals: await totals(), periods: await listPeriods(userId(req)), tests: await listTests(userId(req)) });
+}));
+
+app.get('/api/periods/:slug/books/:entry(\\d+)', requireUser, wrap(async (req, res) => {
+  const page = await getPeriodBook(req.params.slug, Number(req.params.entry), userId(req));
+  if (!page) return res.status(404).json({ error: 'Бұл кітап осы кезеңде табылмады немесе әзірге жабық.' });
+  res.json(page);
 }));
 
 app.get('/api/periods/:slug', requireUser, wrap(async (req, res) => {

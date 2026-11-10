@@ -2183,3 +2183,102 @@ textarea {
   max-width: 34px;
   max-height: 34px;
 }
+
+/* ─── Books of a period ────────────────────────────────────────── */
+.o-shelf-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--red);
+}
+.o-row-body small.o-warn {
+  color: var(--bad);
+  font-weight: 700;
+}
+.o-row-body small.o-ok-text {
+  color: var(--ok);
+  font-weight: 700;
+}
+.o-pick-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.o-pick,
+.o-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.o-pick:has(input:checked),
+.o-check-row:has(input:checked) {
+  border-color: var(--red-line);
+  background: #fdf5f5;
+}
+.o-pick.is-off {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.o-pick input,
+.o-check-row input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--red);
+}
+.o-pick-body,
+.o-check-row > span:not(.o-badge):not(.o-book-thumb) {
+  flex: 1;
+  min-width: 0;
+}
+.o-pick-body b,
+.o-check-row b {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.o-pick-body small,
+.o-check-row small {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.o-pick-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.o-pick-group {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.o-pick-group legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 900;
+}
+.o-shelf-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .o-pick,
+  .o-check-row {
+    flex-wrap: wrap;
+  }
+  .o-check-row .o-badge {
+    margin-left: 30px;
+  }
+}

@@ -335,6 +335,26 @@ CREATE TABLE IF NOT EXISTS book_pages_read (
 );
 `;
 
+// Books of a period: the organizer puts textbooks from «Кітаптар» on a period (one book can be on
+// several periods) and picks the tests of each. A student who opens the period chooses a book
+// first and sees only its tests, under the book's cover.
+const SCHEMA_V4 = `
+CREATE TABLE IF NOT EXISTS period_books (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id INTEGER NOT NULL,
+  book_id INTEGER NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (period_id, book_id)
+);
+CREATE TABLE IF NOT EXISTS period_book_tests (
+  entry_id INTEGER NOT NULL,
+  test_id INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, test_id)
+);
+CREATE INDEX IF NOT EXISTS idx_period_book_tests_test ON period_book_tests(test_id);
+`;
+
 const COLUMNS = [
   ['topics', 'published', 'INTEGER NOT NULL DEFAULT 1'],
   ['topics', 'image_id', 'INTEGER'],
@@ -396,6 +416,7 @@ export async function migrate() {
   await db.executeMultiple(SCHEMA);
   await db.executeMultiple(SCHEMA_V2);
   await db.executeMultiple(SCHEMA_V3);
+  await db.executeMultiple(SCHEMA_V4);
   const firstReworkRun = !(await all('PRAGMA table_info(link_attempts)')).some((c) => c.name === 'kind');
   await addMissingColumns();
   await db.execute('CREATE INDEX IF NOT EXISTS idx_link_attempts_root ON link_attempts(root_id)');

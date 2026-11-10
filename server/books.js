@@ -215,6 +215,9 @@ orgBooksRouter.delete(
     const statements = [
       ['DELETE FROM books WHERE id = ?', book.id],
       ['DELETE FROM book_progress WHERE book_id = ?', book.id],
+      // Off every period it was on (the tests themselves stay).
+      ['DELETE FROM period_book_tests WHERE entry_id IN (SELECT id FROM period_books WHERE book_id = ?)', book.id],
+      ['DELETE FROM period_books WHERE book_id = ?', book.id],
     ];
     if (book.pdf_id) statements.push(...dropPdf(book.pdf_id));
     // The cover goes too, unless something else on the site still shows that picture.
@@ -342,6 +345,9 @@ booksRouter.get(
     res.json({ books: rows.map(studentBook) });
   }),
 );
+
+/** SQL pieces for books students may see (used by the books of a period). */
+export const LIVE_BOOK = { columns: BOOK_COLUMNS, from: BOOK_FROM, where: LIVE };
 
 const liveBook = async (bookId, userId) =>
   get(

@@ -1,4 +1,5 @@
-import { all } from './db.js';
+import { all, get } from './db.js';
+import { LIVE_BOOK } from './books.js';
 import { published } from './publish.js';
 import { gradable, settingsOf } from './questions.js';
 import { defaultTopicEmblem } from './emblem-defaults.js';
@@ -106,6 +107,78 @@ export async function getPeriod(slug, userId) {
   return {
     ...periodStats(snap, period, best, userId),
     topics: snap.topics.filter((t) => t.period_id === period.id).map((t) => topicSummary(snap, t, best)),
+    books: (await periodShelf(snap, period)).map(({ tests, ...b }) => ({
+      ...b,
+      test_count: tests.length,
+      tests_done: userId ? tests.filter((x) => best.has(x.id)).length : null,
+    })),
+  };
+}
+
+// ─── Books of a period ───────────────────────────────────────────
+// The books the organizer put on a period, each with its tests. A book is shown only while it is
+// published (cover and PDF complete) and has at least one published test of this period.
+
+const bookView = (b) => ({
+  id: b.entry_id,
+  book_id: b.id,
+  title: b.title,
+  grade: b.grade ?? null,
+  publisher: b.publisher || '',
+  cover_id: b.cover_id,
+  cover_version: b.cover_version,
+});
+
+async function periodShelf(snap, period) {
+  const rows = await all(
+    `SELECT pb.id AS entry_id, ${LIVE_BOOK.columns} FROM period_books pb JOIN books b ON b.id = pb.book_id
+       LEFT JOIN files c ON c.id = b.cover_id LEFT JOIN files p ON p.id = b.pdf_id
+     WHERE pb.period_id = ? AND ${LIVE_BOOK.where} ORDER BY pb.position, pb.id`,
+    period.id,
+  );
+  if (!rows.length) return [];
+  const links = await all(
+    `SELECT entry_id, test_id FROM period_book_tests WHERE entry_id IN (${rows.map(() => '?').join(',')})`,
+    ...rows.map((r) => r.entry_id),
+  );
+  // In the period's own order (topics, then tests), only what students may see.
+  const topicIds = new Set(snap.topics.filter((t) => t.period_id === period.id).map((t) => t.id));
+  const tests = snap.tests.filter((x) => topicIds.has(x.topic_id));
+  return rows
+    .map((r) => {
+      const chosen = new Set(links.filter((l) => l.entry_id === r.entry_id).map((l) => l.test_id));
+      return { ...bookView(r), tests: tests.filter((x) => chosen.has(x.id)) };
+    })
+    .filter((b) => b.tests.length);
+}
+
+/** A period's book and its tests (the page a student opens after choosing the book). */
+export async function getPeriodBook(slug, entryId, userId) {
+  const snap = await published();
+  const period = snap.periods.find((p) => p.slug === slug);
+  if (!period) return null;
+  const shelf = await periodShelf(snap, period);
+  const book = shelf.find((b) => b.id === entryId);
+  if (!book) return null;
+  const best = await bestByTest(userId);
+  const topicOf = new Map(snap.topics.map((t) => [t.id, t]));
+  return {
+    period: { ...periodStats(snap, period, best, userId) },
+    book: { ...book, tests: undefined },
+    other_books: shelf.filter((b) => b.id !== entryId).map(({ tests, ...b }) => ({ ...b, test_count: tests.length })),
+    tests: book.tests.map((x) => {
+      const t = topicOf.get(x.topic_id);
+      return {
+        ...testCard(x, best),
+        slug: t.slug,
+        topic_title: t.title,
+        topic_icon: topicIcon(t),
+        summary: t.summary,
+        period_slug: period.slug,
+        period_title: period.title,
+        period_number: period.number,
+      };
+    }),
   };
 }
 
