@@ -25,6 +25,7 @@ import { booksRouter } from './books.js';
 import { activityRouter, reportRouter, purgeOldActivity } from './activity.js';
 import { publicLinksRouter } from './links.js';
 import { seedIfEmpty } from './seed.js';
+import { linkExistingBooksOnce } from './shelves.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -36,6 +37,7 @@ export function whenReady() {
     await migrate();
     await seedIfEmpty();
     await ensureFirstPublication();
+    await linkExistingBooksOnce();
     purgeExpiredSessions().catch(() => {});
     purgeOldActivity().catch(() => {});
   })().catch((err) => {

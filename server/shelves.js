@@ -8,6 +8,41 @@ import { all, get, run, batch } from './db.js';
 // the tests stay where they are. Changes are live at once (like the books themselves); students
 // see a book only while it is published and has at least one published test.
 
+/**
+ * Links the books already on the site to the periods once, so the new choice appears without
+ * the organizer doing it by hand: a book with a grade and a publisher goes on every period that
+ * has tests of the same grade and publisher (a test's own tags, or its topic's), with those
+ * tests. It runs on the first start that finds books; later the organizer's changes stand.
+ */
+export async function linkExistingBooksOnce() {
+  if (await get("SELECT 1 AS ok FROM settings WHERE key = 'period_books_autolinked'")) return;
+  const books = await all("SELECT id, grade, publisher FROM books ORDER BY position, id");
+  if (!books.length) return;
+  const tests = await all(
+    `SELECT x.id, t.period_id, COALESCE(x.grade, t.grade) AS grade,
+            CASE WHEN x.publisher <> '' THEN x.publisher ELSE COALESCE(t.publisher, '') END AS publisher
+     FROM tests x JOIN topics t ON t.id = x.topic_id AND t.deleted = 0 ORDER BY t.period_id, t.position, x.position, x.id`,
+  );
+  const existing = await all('SELECT period_id, book_id, position FROM period_books');
+  const has = new Set(existing.map((e) => `${e.period_id}:${e.book_id}`));
+  const last = new Map();
+  for (const e of existing) last.set(e.period_id, Math.max(last.get(e.period_id) || 0, e.position));
+  let made = 0;
+  for (const periodId of [...new Set(tests.map((x) => x.period_id))]) {
+    for (const b of books) {
+      if (!b.grade || !b.publisher || has.has(`${periodId}:${b.id}`)) continue;
+      const ids = tests.filter((x) => x.period_id === periodId && x.grade === b.grade && x.publisher === b.publisher).map((x) => x.id);
+      if (!ids.length) continue;
+      const pos = (last.get(periodId) || 0) + 1;
+      last.set(periodId, pos);
+      const { lastInsertRowid } = await run('INSERT INTO period_books (period_id, book_id, position) VALUES (?, ?, ?)', periodId, b.id, pos);
+      await batch(ids.map((t) => ['INSERT OR IGNORE INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', Number(lastInsertRowid), t]));
+      made += 1;
+    }
+  }
+  await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('period_books_autolinked', ?)", JSON.stringify({ at: new Date().toISOString(), entries: made }));
+}
+
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const failWith = (status, message) => {
   throw Object.assign(new Error(message), { status });
