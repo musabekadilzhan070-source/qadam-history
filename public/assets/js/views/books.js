@@ -24,17 +24,19 @@ const card = (b) => `
     </a>
   </li>`;
 
-/** Books grouped by the organizer's category, in their order; no categories → one plain grid. */
+/** The publishers that get their own section, in this order; other books follow under «Басқа кітаптар». */
+const PUBLISHER_GROUPS = [
+  { publisher: 'Атамұра', title: 'Атамұра баспасының кітаптары' },
+  { publisher: 'Мектеп', title: 'Мектеп баспасының кітаптары' },
+];
+const samePublisher = (a, b) => String(a || '').trim().toLowerCase() === b.toLowerCase();
+
+/** Books by publisher (Атамұра, then Мектеп, then the rest), each in the organizer's order. */
 function groups(books) {
-  const out = [];
-  for (const b of books) {
-    const title = b.category || '';
-    let g = out.find((x) => x.title === title);
-    if (!g) out.push((g = { title, books: [] }));
-    g.books.push(b);
-  }
-  if (out.length > 1) for (const g of out) if (!g.title) g.title = 'Басқа кітаптар';
-  return out;
+  const out = PUBLISHER_GROUPS.map((g) => ({ title: g.title, books: books.filter((b) => samePublisher(b.publisher, g.publisher)) }));
+  const known = new Set(out.flatMap((g) => g.books));
+  out.push({ title: 'Басқа кітаптар', books: books.filter((b) => !known.has(b)) });
+  return out.filter((g) => g.books.length);
 }
 
 export async function booksView(el, _params, _app, alive) {
@@ -46,7 +48,7 @@ export async function booksView(el, _params, _app, alive) {
     ${
       books.length
         ? groups(books)
-            .map((g) => `${g.title ? `<h2 class="book-group">${esc(g.title)}</h2>` : ''}<ul class="book-grid">${g.books.map(card).join('')}</ul>`)
+            .map((g) => `<h2 class="book-group">${esc(g.title)}</h2><ul class="book-grid">${g.books.map(card).join('')}</ul>`)
             .join('')
         : '<div class="panel empty"><p>Әзірге кітап жарияланбаған. Организатор кітап қосқанда осы жерде көрінеді.</p></div>'
     }`;
