@@ -2373,3 +2373,42 @@ textarea {
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
+
+/* Drag and drop of tests: a handle on each row of a list that can be reordered. */
+.o-drag {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.o-drag:hover {
+  color: var(--ink);
+  background: var(--canvas);
+}
+[data-sort] > .o-row {
+  cursor: grab;
+}
+[data-sort] > .o-row :is(a, button, input, select, label) {
+  cursor: pointer;
+}
+.o-rows.is-sorting {
+  user-select: none;
+}
+.o-rows.is-sorting > .o-row {
+  cursor: grabbing;
+}
+.o-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  border-color: var(--red-line);
+  box-shadow: 0 8px 24px rgb(10 10 12 / 0.18);
+  opacity: 0.92;
+}

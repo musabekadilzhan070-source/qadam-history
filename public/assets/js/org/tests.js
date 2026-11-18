@@ -219,14 +219,30 @@ export async function testsView(el, _params, ctx, alive) {
     }
   }
 
-  const row = (x) => {
-    const siblings = s().tests.filter((t) => t.topic_id === x.topic_id);
+  /** A book's tests in the organizer's order for that book; the rest follow in period order. */
+  const bookTests = (e, tests) => {
+    const mine = tests.filter((x) => e.test_ids.includes(x.id));
+    const at = new Map(mine.map((x, i) => [x.id, i]));
+    const pos = (x) => e.positions?.[x.id] || Infinity;
+    return mine.sort((a, b) => pos(a) - pos(b) || at.get(a.id) - at.get(b.id));
+  };
+  /** What dragging in a list reorders: a book («entry:<id>»), a topic («topic:<id>»), or nothing (mixed topics). */
+  const sortKey = (list, entry) => {
+    if (entry) return `entry:${entry.id}`;
+    const topics = new Set(list.map((x) => x.topic_id));
+    return topics.size === 1 && list[0]?.topic_id ? `topic:${list[0].topic_id}` : '';
+  };
+
+  const row = (x, list, key) => {
+    const siblings = key ? list : s().tests.filter((t) => t.topic_id === x.topic_id);
     const i = siblings.indexOf(x);
+    const where = key.startsWith('entry:') ? 'Кітап ішінде' : 'Тақырып ішінде';
     const topic = s().topics.find((t) => t.id === x.topic_id);
     return `<li class="o-row" data-id="${x.id}">
+      ${key ? '<span class="o-drag" data-drag title="Сүйреп ауыстыру" aria-hidden="true">⠿</span>' : ''}
       <div class="o-order">
-        <button type="button" class="o-icon-btn" data-act="up" ${i <= 0 ? 'disabled' : ''} aria-label="Тақырып ішінде жоғары" title="Тақырып ішінде жоғары">▲</button>
-        <button type="button" class="o-icon-btn" data-act="down" ${i === siblings.length - 1 ? 'disabled' : ''} aria-label="Тақырып ішінде төмен" title="Тақырып ішінде төмен">▼</button>
+        <button type="button" class="o-icon-btn" data-act="up" ${i <= 0 ? 'disabled' : ''} aria-label="${where} жоғары" title="${where} жоғары">▲</button>
+        <button type="button" class="o-icon-btn" data-act="down" ${i === siblings.length - 1 ? 'disabled' : ''} aria-label="${where} төмен" title="${where} төмен">▼</button>
       </div>
       <span class="o-row-icon">${icon('tests')}</span>
       <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
@@ -251,12 +267,16 @@ export async function testsView(el, _params, ctx, alive) {
       </div>
     </li>`;
   };
-  const rows = (list, empty) => (list.length ? `<ol class="o-rows">${list.map(row).join('')}</ol>` : `<p class="o-muted">${empty}</p>`);
-  const group = ({ eyebrow = '', title, head = '', actions = '', list, empty, attrs = '' }) => `
+  const rows = (list, empty, entry) => {
+    if (!list.length) return `<p class="o-muted">${empty}</p>`;
+    const key = sortKey(list, entry);
+    return `<ol class="o-rows" ${key ? `data-sort="${key}"` : ''}>${list.map((x) => row(x, list, key)).join('')}</ol>`;
+  };
+  const group = ({ eyebrow = '', title, head = '', actions = '', list, empty, attrs = '', entry = null }) => `
     <section class="o-card o-card-tight o-test-group" ${attrs}>
       <div class="o-card-head"><div>${eyebrow ? `<p class="eyebrow">${esc(eyebrow)}</p>` : ''}<h2>${head}${esc(title)} <span class="o-count">${list.length}</span></h2></div>
         ${actions ? `<div class="o-row-actions">${actions}</div>` : ''}</div>
-      ${rows(list, empty)}
+      ${rows(list, empty, entry)}
     </section>`;
 
   function periodBody(p) {
@@ -289,7 +309,7 @@ export async function testsView(el, _params, ctx, alive) {
     const chips = `
       <div class="chips o-book-chips" role="group" aria-label="Кітап бойынша">
         <button type="button" class="chip chip-all" data-book="" aria-pressed="${!book}">Барлық кітаптар <span class="o-count">${tests.length}</span></button>
-        ${list.map((e) => `<button type="button" class="chip chip-all" data-book="${e.id}" aria-pressed="${book === String(e.id)}">${icon('book')}${esc(entryName(e))} <span class="o-count">${tests.filter((x) => e.test_ids.includes(x.id)).length}</span></button>`).join('')}
+        ${list.map((e) => `<button type="button" class="chip chip-all" data-book="${e.id}" aria-pressed="${book === String(e.id)}">${icon('book')}${esc(entryName(e))} <span class="o-count">${bookTests(e, tests).length}</span></button>`).join('')}
         ${loose.length ? `<button type="button" class="chip chip-all" data-book="none" aria-pressed="${book === 'none'}">Кітапсыз <span class="o-count">${loose.length}</span></button>` : ''}
       </div>`;
     const bookGroups = list
@@ -300,7 +320,8 @@ export async function testsView(el, _params, ctx, alive) {
           eyebrow: b?.title || '',
           head: icon('book', 'icon o-group-icon'),
           title: entryName(e),
-          list: tests.filter((x) => e.test_ids.includes(x.id)),
+          list: bookTests(e, tests),
+          entry: e,
           empty: 'Бұл кітапта әзірге тест жоқ. «+ Тест» батырмасымен жаңа тест қосыңыз немесе «Тесттерді белгілеу» арқылы бар тесттерді таңдаңыз.',
           attrs: `data-entry="${e.id}"`,
           actions: `${newBtn(`data-entry-new="${e.id}"`)}<button type="button" class="btn btn-ghost btn-sm" data-pick-tests="${e.id}">Тесттерді белгілеу</button>`,
@@ -316,7 +337,8 @@ export async function testsView(el, _params, ctx, alive) {
             actions: newBtn(),
           })
         : '';
-    return `${chips}${bookGroups.join('')}${looseGroup}`;
+    const hint = '<p class="o-muted o-tests-note">Ретін өзгерту үшін тестті ⠿ белгісінен (немесе жолдың бос жерінен) ұстап, тінтуірмен жоғары не төмен сүйреңіз. Кітаптағы рет оқушының бетінде бірден көрінеді.</p>';
+    return `${chips}${hint}${bookGroups.join('')}${looseGroup}`;
   }
 
   const draw = () => {
@@ -443,6 +465,14 @@ export async function testsView(el, _params, ctx, alive) {
     if (!x) return;
     await busy(btn, async () => {
       if (act === 'up' || act === 'down') {
+        const ol = rowEl.closest('[data-sort]');
+        if (ol) {
+          const ids = [...ol.children].map((li) => Number(li.dataset.id));
+          const i = ids.indexOf(x.id);
+          const j = i + (act === 'up' ? -1 : 1);
+          [ids[i], ids[j]] = [ids[j], ids[i]];
+          return saveOrder(ol.dataset.sort, ids);
+        }
         const list = s().tests.filter((t) => t.topic_id === x.topic_id);
         await org.post('/tests/reorder', { ids: moved(list, list.indexOf(x), act === 'up' ? -1 : 1).map((t) => t.id) });
       } else if (act === 'books') {
@@ -466,6 +496,88 @@ export async function testsView(el, _params, ctx, alive) {
       draw();
     });
   });
+
+  /** Saves a new order of a list: inside a book (live at once) or inside a topic. */
+  async function saveOrder(key, ids) {
+    const [kind, raw] = key.split(':');
+    try {
+      if (kind === 'entry') {
+        const saved = await org.post(`/period-books/${raw}/order`, { test_ids: ids });
+        entries = entries.map((x) => (x.id === saved.id ? saved : x));
+        toast('Кітаптағы тесттердің реті сақталды.');
+      } else {
+        await org.post('/tests/reorder', { ids });
+        await ctx.reload();
+        toast('Тесттердің реті сақталды.');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+      ({ entries } = await org.get('/period-books'));
+      await ctx.reload();
+    }
+    draw();
+  }
+
+  // Drag and drop with the mouse (the ⠿ handle, or anywhere on the row but its buttons and
+  // links) and with a finger on the handle. The row moves while dragging; the order is saved on
+  // release, and only inside the same list.
+  let drag = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const li = e.target.closest('[data-sort] > .o-row');
+    if (!li) return;
+    const onHandle = Boolean(e.target.closest('[data-drag]'));
+    if (!onHandle && (e.pointerType !== 'mouse' || e.target.closest('button, a, input, select, textarea, label, .o-link-line'))) return;
+    const ol = li.parentElement;
+    drag = { li, ol, start: e.clientY, moved: false, before: [...ol.children].map((x) => x.dataset.id).join(','), id: e.pointerId };
+    if (onHandle) e.preventDefault();
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (!drag.moved) {
+      if (Math.abs(e.clientY - drag.start) < 6) return;
+      drag.moved = true;
+      drag.li.classList.add('is-dragging');
+      drag.ol.classList.add('is-sorting');
+      try {
+        el.setPointerCapture?.(e.pointerId);
+      } catch {
+        /* capture is optional */
+      }
+    }
+    e.preventDefault();
+    const others = [...drag.ol.children].filter((x) => x !== drag.li);
+    const next = others.find((x) => {
+      const r = x.getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    });
+    if (next) {
+      if (drag.li.nextElementSibling !== next) drag.ol.insertBefore(drag.li, next);
+    } else if (drag.ol.lastElementChild !== drag.li) drag.ol.append(drag.li);
+    // Near the window edge the page scrolls, so long lists can be crossed.
+    if (e.clientY < 60) window.scrollBy(0, -14);
+    else if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 14);
+  });
+  const finish = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) return;
+    d.li.classList.remove('is-dragging');
+    d.ol.classList.remove('is-sorting');
+    // A drag is not a click on the row's link.
+    const swallow = (c) => {
+      c.preventDefault();
+      c.stopPropagation();
+    };
+    el.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => el.removeEventListener('click', swallow, { capture: true }), 80);
+    const ids = [...d.ol.children].map((x) => Number(x.dataset.id));
+    if (ids.join(',') !== d.before) saveOrder(d.ol.dataset.sort, ids);
+  };
+  el.addEventListener('pointerup', finish);
+  el.addEventListener('pointercancel', finish);
+
   draw();
   remember();
 }
