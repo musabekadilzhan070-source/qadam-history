@@ -239,3 +239,27 @@ test('a book put on a period from the book form starts with the tests of its gra
   assert.equal(empty.status, 201);
   assert.deepEqual(empty.body.test_ids, []);
 });
+
+test('the organizer orders the tests inside a book; students see that order, new tests go last', async () => {
+  const org = await organizer();
+  const { body: st } = await org('GET', '/api/org/state');
+  const period = st.periods[1];
+  const topics = st.topics.filter((t) => t.period_id === period.id && t.published);
+  const a = await newTest(org, topics[0].id, 'Бірінші');
+  const b = await newTest(org, topics[topics.length - 1].id, 'Екінші');
+  const c = await newTest(org, topics[0].id, 'Үшінші');
+  const bookId = await book(org, 'Реттелетін кітап', 7, 'Мектеп');
+  const entry = (await org('POST', '/api/org/period-books', { period_id: period.id, book_id: bookId, test_ids: [a, b, c] })).body;
+  assert.equal((await org('POST', `/api/org/period-books/${entry.id}/order`, { test_ids: [c, a] })).status, 400, 'every test of the book');
+  const saved = await org('POST', `/api/org/period-books/${entry.id}/order`, { test_ids: [b, c, a] });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.positions, { [b]: 1, [c]: 2, [a]: 3 });
+  const pupil = await student();
+  let page = (await pupil('GET', `/api/periods/${period.slug}/books/${entry.id}`)).body;
+  assert.deepEqual(page.tests.map((x) => x.id), [b, c, a]);
+  // Setting the tests keeps the places of those that stay; a new one goes after them.
+  const d = await newTest(org, topics[0].id, 'Төртінші');
+  await org('PUT', `/api/org/period-books/${entry.id}`, { test_ids: [a, b, c, d] });
+  page = (await pupil('GET', `/api/periods/${period.slug}/books/${entry.id}`)).body;
+  assert.deepEqual(page.tests.map((x) => x.id), [b, c, a, d]);
+});

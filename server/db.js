@@ -409,6 +409,8 @@ const COLUMNS = [
   ['link_attempts', 'kind', "TEXT NOT NULL DEFAULT 'test'"],
   ['link_attempts', 'parent_id', 'INTEGER'],
   ['link_attempts', 'root_id', 'INTEGER'],
+  // The organizer's order of the tests inside a book of a period (0 = not set: period order, after the set ones).
+  ['period_book_tests', 'position', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 async function addMissingColumns() {

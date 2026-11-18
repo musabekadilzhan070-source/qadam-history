@@ -138,7 +138,7 @@ async function periodShelf(snap, period) {
   );
   if (!rows.length) return [];
   const links = await all(
-    `SELECT entry_id, test_id FROM period_book_tests WHERE entry_id IN (${rows.map(() => '?').join(',')})`,
+    `SELECT entry_id, test_id, position FROM period_book_tests WHERE entry_id IN (${rows.map(() => '?').join(',')})`,
     ...rows.map((r) => r.entry_id),
   );
   // In the period's own order (topics, then tests), only what students may see.
@@ -146,8 +146,12 @@ async function periodShelf(snap, period) {
   const tests = snap.tests.filter((x) => topicIds.has(x.topic_id));
   return rows
     .map((r) => {
-      const chosen = new Set(links.filter((l) => l.entry_id === r.entry_id).map((l) => l.test_id));
-      return { ...bookView(r), tests: tests.filter((x) => chosen.has(x.id)) };
+      // The organizer's order in the book first; tests without a place follow in period order.
+      const pos = new Map(links.filter((l) => l.entry_id === r.entry_id).map((l) => [l.test_id, l.position || Infinity]));
+      const mine = tests.filter((x) => pos.has(x.id));
+      const at = new Map(mine.map((x, i) => [x.id, i]));
+      mine.sort((a, b) => pos.get(a.id) - pos.get(b.id) || at.get(a.id) - at.get(b.id));
+      return { ...bookView(r), tests: mine };
     })
     .filter((b) => b.tests.length);
 }

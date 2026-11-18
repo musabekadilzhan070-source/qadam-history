@@ -55,8 +55,11 @@ const id = (v) => {
 /** Every period's books with the ids of their tests, in the organizer's order. */
 export async function shelfState() {
   const entries = await all('SELECT id, period_id, book_id, position FROM period_books ORDER BY period_id, position, id');
-  const links = await all('SELECT entry_id, test_id FROM period_book_tests ORDER BY test_id');
-  return entries.map((e) => ({ ...e, test_ids: links.filter((l) => l.entry_id === e.id).map((l) => l.test_id) }));
+  const links = await all('SELECT entry_id, test_id, position FROM period_book_tests ORDER BY test_id');
+  return entries.map((e) => {
+    const mine = links.filter((l) => l.entry_id === e.id);
+    return { ...e, test_ids: mine.map((l) => l.test_id), positions: Object.fromEntries(mine.filter((l) => l.position > 0).map((l) => [l.test_id, l.position])) };
+  });
 }
 
 const entryById = async (entryId) => (await shelfState()).find((e) => e.id === entryId);
@@ -145,9 +148,11 @@ orgShelvesRouter.put(
       statements.push(['UPDATE period_books SET book_id = ? WHERE id = ?', bookId, entry.id]);
     }
     if (req.body?.test_ids !== undefined) {
+      // Tests that stay keep their place in the book; new ones go after the others.
       const tests = await cleanTests(entry.period_id, req.body.test_ids);
-      statements.push(['DELETE FROM period_book_tests WHERE entry_id = ?', entry.id]);
-      for (const t of tests) statements.push(['INSERT INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', entry.id, t]);
+      const keep = new Set(tests);
+      for (const t of entry.test_ids) if (!keep.has(t)) statements.push(['DELETE FROM period_book_tests WHERE entry_id = ? AND test_id = ?', entry.id, t]);
+      for (const t of tests) if (!entry.test_ids.includes(t)) statements.push(['INSERT INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', entry.id, t]);
     }
     if (statements.length) await batch(statements);
     res.json(await entryById(entry.id));
@@ -165,6 +170,20 @@ orgShelvesRouter.delete(
       ['DELETE FROM period_books WHERE id = ?', entryId],
     ]);
     res.json({ ok: true });
+  }),
+);
+
+/** The order of the tests inside one book (drag and drop in «Тесттер»): every test of the book, once. */
+orgShelvesRouter.post(
+  '/:id(\\d+)/order',
+  wrap(async (req, res) => {
+    const entry = await entryById(id(req.params.id));
+    if (!entry) failWith(404, 'Кезең кітабы табылмады.');
+    const ids = Array.isArray(req.body?.test_ids) ? req.body.test_ids.map(id) : [];
+    const same = ids.length === entry.test_ids.length && new Set(ids).size === ids.length && ids.every((t) => entry.test_ids.includes(t));
+    if (!same) failWith(400, 'Реттеу тізімі қате: бетті жаңартып, қайталаңыз.');
+    await batch(ids.map((t, i) => ['UPDATE period_book_tests SET position = ? WHERE entry_id = ? AND test_id = ?', i + 1, entry.id, t]));
+    res.json(await entryById(entry.id));
   }),
 );
 
