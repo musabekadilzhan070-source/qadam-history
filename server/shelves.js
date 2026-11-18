@@ -81,6 +81,22 @@ async function cleanTests(periodId, raw) {
   return ids;
 }
 
+/**
+ * Tests of the period with the book's grade and publisher (a test's own tags, or its topic's):
+ * what a book put on a period from the book form starts with. A book without both tags gets none.
+ */
+async function matchingTests(periodId, bookId) {
+  const book = await get('SELECT grade, publisher FROM books WHERE id = ?', bookId);
+  if (!book?.grade || !book.publisher) return [];
+  const rows = await all(
+    `SELECT x.id, COALESCE(x.grade, t.grade) AS grade,
+            CASE WHEN x.publisher <> '' THEN x.publisher ELSE COALESCE(t.publisher, '') END AS publisher
+     FROM tests x JOIN topics t ON t.id = x.topic_id AND t.deleted = 0 WHERE t.period_id = ? ORDER BY t.position, x.position, x.id`,
+    periodId,
+  );
+  return rows.filter((r) => r.grade === book.grade && r.publisher === book.publisher).map((r) => r.id);
+}
+
 export const orgShelvesRouter = express.Router();
 
 orgShelvesRouter.get(
@@ -101,7 +117,11 @@ orgShelvesRouter.post(
     if (await get('SELECT 1 AS ok FROM period_books WHERE period_id = ? AND book_id = ?', periodId, bookId)) {
       failWith(409, 'Бұл кітап осы кезеңге бекітіліп қойған.');
     }
-    const tests = req.body?.test_ids ? await cleanTests(periodId, req.body.test_ids) : [];
+    const tests = req.body?.test_ids
+      ? await cleanTests(periodId, req.body.test_ids)
+      : req.body?.match_tests
+        ? await matchingTests(periodId, bookId)
+        : [];
     const { pos } = await get('SELECT COALESCE(MAX(position), 0) + 1 AS pos FROM period_books WHERE period_id = ?', periodId);
     const { lastInsertRowid } = await run('INSERT INTO period_books (period_id, book_id, position) VALUES (?, ?, ?)', periodId, bookId, pos);
     if (tests.length) await batch(tests.map((t) => ['INSERT INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', lastInsertRowid, t]));

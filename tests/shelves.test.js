@@ -220,3 +220,22 @@ test('existing books are linked to periods once, by grade and publisher', async 
   ({ body } = await org('GET', '/api/org/period-books'));
   assert.ok(!body.entries.some((e) => e.book_id === bookId));
 });
+
+test('a book put on a period from the book form starts with the tests of its grade and publisher', async () => {
+  const org = await organizer();
+  const { body: st } = await org('GET', '/api/org/state');
+  const period = st.periods[3];
+  const topic = st.topics.find((t) => t.period_id === period.id);
+  const mine = (await org('POST', '/api/org/tests', { title: '11 Атамұра', topic_id: topic.id, grade: 11, publisher: 'Атамұра', questions: Q })).body.id;
+  const theirs = (await org('POST', '/api/org/tests', { title: '11 Мектеп', topic_id: topic.id, grade: 11, publisher: 'Мектеп', questions: Q })).body.id;
+  const bookId = await book(org, 'Қазақстан тарихы 11 (Атамұра)', 11, 'Атамұра');
+  const made = await org('POST', '/api/org/period-books', { period_id: period.id, book_id: bookId, match_tests: true });
+  assert.equal(made.status, 201);
+  assert.ok(made.body.test_ids.includes(mine));
+  assert.ok(!made.body.test_ids.includes(theirs));
+  // A book without a grade gets no tests, but is still put on the period.
+  const plain = await book(org, 'Тегі жоқ кітап', null, '');
+  const empty = await org('POST', '/api/org/period-books', { period_id: period.id, book_id: plain, match_tests: true });
+  assert.equal(empty.status, 201);
+  assert.deepEqual(empty.body.test_ids, []);
+});

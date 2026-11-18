@@ -9,8 +9,11 @@ import { inspectPdf, openChunked, fontReport } from '../pdf.js';
 const coverSrc = (b) => `/api/files/${b.cover_id}?v=${b.cover_version}`;
 
 export async function booksView(el, _params, ctx, alive) {
-  let { books } = await org.get('/books');
+  let [{ books }, { entries }] = await Promise.all([org.get('/books'), org.get('/period-books')]);
   if (!alive()) return;
+  /** The periods a book is on, in period order. */
+  const periodsOf = (b) =>
+    ctx.state.periods.filter((p) => entries.some((e) => e.book_id === b.id && e.period_id === p.id)).map((p) => p.title);
 
   const row = (b, i) => `
     <li class="o-row o-book-row" data-id="${b.id}">
@@ -21,6 +24,7 @@ export async function booksView(el, _params, ctx, alive) {
       <span class="o-book-thumb">${b.cover_id && b.cover_kind === 'image' ? `<img src="${coverSrc(b)}" alt="" />` : icon('book')}</span>
       <div class="o-row-body"><a href="/organizer/books/${b.id}" data-link><b>${esc(b.title)}</b></a>
         <small>${esc([b.category, b.subject, gradeLabel(b.grade), b.publisher].filter(Boolean).join(' · '))}${b.pdf_kind === 'bookpdf' ? ` · PDF ${formatBytes(b.pdf_size)}${b.page_count ? `, ${b.page_count} бет` : ''}` : ''}
+        ${periodsOf(b).length ? `<br>Кезеңі: ${esc(periodsOf(b).join(', '))}` : '<br>Кезеңге бекітілмеген'}
         ${b.problems.length ? `<br><span class="o-warn">${esc(b.problems.join(' '))}</span>` : ''}</small></div>
       ${statusBadge(b.published)}
       <div class="o-row-actions">
@@ -61,6 +65,7 @@ export async function booksView(el, _params, ctx, alive) {
         await org.post(`/books/${b.id}/move`, { delta: act === 'up' ? -1 : 1 });
       }
       ({ books } = await org.get('/books'));
+      ({ entries } = await org.get('/period-books'));
       draw();
     });
   });
@@ -95,7 +100,8 @@ async function uploadPdf(file, pageCount, onProgress, signal) {
 
 export async function bookEditView(el, [param], ctx, alive) {
   const isNew = param === 'new';
-  const { limits } = await org.get('/books');
+  const [{ limits }, shelf] = await Promise.all([org.get('/books'), org.get('/period-books')]);
+  let entries = shelf.entries;
   let book = isNew
     ? { title: '', subject: SUBJECT, grade: null, publisher: '', category: '', allow_download: false, description: '', cover_id: null, pdf_id: null, published: false, problems: [] }
     : await org.get(`/books/${param}`);
@@ -160,6 +166,43 @@ export async function bookEditView(el, [param], ctx, alive) {
     drawFonts();
   }
 
+  // Which periods the book is on («Кезең кітаптары»): there the student chooses it by its
+  // «8-сынып | Атамұра» button and sees its tests.
+  const entriesOfBook = () => (book.id ? entries.filter((e) => e.book_id === book.id) : []);
+  const periodField = () => `
+    <fieldset class="o-field o-book-periods">
+      <legend class="o-label">Тарихи кезеңі</legend>
+      <div class="o-period-checks">
+        ${ctx.state.periods
+          .map((p) => {
+            const entry = entriesOfBook().find((e) => e.period_id === p.id);
+            return `<label class="o-check-row"><input type="checkbox" name="period" value="${p.id}" ${entry ? 'checked' : ''} />
+              <span><b>${esc(p.title)}</b>${entry ? `<small>${entry.test_ids.length} тест</small>` : ''}</span></label>`;
+          })
+          .join('')}
+      </div>
+      <small class="o-hint">Оқушы осы кезеңді ашқанда кітапты жоғарыдағы таңдау батырмасынан көреді. Жаңа белгіленген кезеңге сол кезеңнің осы сынып пен баспадағы тесттері бірден қосылады; тесттерді «Тесттер» немесе «Кезең кітаптары» бөлімінде өзгертуге болады.</small>
+    </fieldset>`;
+
+  /** Puts the saved book on the ticked periods and takes it off the others. */
+  async function savePeriods(wanted) {
+    const mine = entriesOfBook();
+    const add = wanted.filter((pid) => !mine.some((e) => e.period_id === pid));
+    const drop = mine.filter((e) => !wanted.includes(e.period_id));
+    if (drop.length) {
+      const names = drop.map((e) => ctx.state.periods.find((p) => p.id === e.period_id)?.title).filter(Boolean).join(', ');
+      const ok = await confirmDialog(
+        'Кітапты кезеңнен алып тастау',
+        `«${book.title}» кітабы ${names} кезеңінен алынады, оның осы кезеңдегі тест тізімі тазаланады. Тесттердің өзі және оқушылардың нәтижелері жойылмайды.`,
+        { ok: 'Алып тастау', danger: true },
+      );
+      if (!ok) drop.length = 0;
+    }
+    for (const pid of add) await org.post('/period-books', { period_id: pid, book_id: book.id, match_tests: true });
+    for (const e of drop) await org.del(`/period-books/${e.id}`);
+    if (add.length || drop.length) ({ entries } = await org.get('/period-books'));
+  }
+
   const draw = () => {
     el.innerHTML = `
       <p class="o-back"><a href="/organizer/books" data-link>← Кітаптар</a></p>
@@ -173,6 +216,7 @@ export async function bookEditView(el, [param], ctx, alive) {
           ${select({ name: 'grade', label: 'Сынып', value: book.grade ?? '', options: [{ value: '', label: '— Таңдалмаған —' }, ...GRADES.map((g) => ({ value: g, label: gradeLabel(g) }))] })}
           <label class="o-field"><span class="o-label">Баспа</span><input name="publisher" maxlength="80" list="o-book-publishers" value="${esc(book.publisher || '')}" placeholder="Атамұра, Мектеп…" /></label>
         </div>
+        ${periodField()}
         <label class="o-field"><span class="o-label">Санат немесе тақырып (міндетті емес)</span><input name="category" maxlength="120" list="o-book-categories" value="${esc(book.category || '')}" placeholder="Мысалы: Оқулықтар, Қосымша әдебиет, Хрестоматия" />
           <small class="o-hint">Оқушының «Кітаптар» бетінде кітаптар осы санат бойынша топталады.</small></label>
         <datalist id="o-book-publishers">${PUBLISHERS.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>
@@ -285,6 +329,7 @@ export async function bookEditView(el, [param], ctx, alive) {
       pdf_id: pdf?.file_id || null,
       published: form.published.checked,
     };
+    const periods = [...form.querySelectorAll('[name="period"]:checked')].map((x) => Number(x.value));
     await busy(btn, async () => {
       try {
         book = isNew ? await org.post('/books', body) : await org.put(`/books/${book.id}`, body);
@@ -296,6 +341,11 @@ export async function bookEditView(el, [param], ctx, alive) {
         } else throw err;
       }
       freshPdf = null;
+      try {
+        await savePeriods(periods);
+      } catch (err) {
+        toast(`Кітап сақталды, бірақ кезеңдері сақталмады: ${err.message}`, 'error');
+      }
       dirty = false;
       if (!body.published || book.published) toast(book.published ? 'Сақталды. Кітап оқушыларға көрінеді.' : 'Сақталды. Кітап әзірге жасырын.');
       if (isNew) return ctx.navigate(`/organizer/books/${book.id}`, { replace: true });

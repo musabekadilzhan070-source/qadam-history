@@ -2282,3 +2282,94 @@ textarea {
     margin-left: 30px;
   }
 }
+
+/* ─── A book's periods (book form) ───────────────────────────────── */
+.o-book-periods {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.o-book-periods legend {
+  margin-bottom: 8px;
+  padding: 0;
+}
+.o-period-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* ─── «Тесттер»: by period, then by book ──────────────────────────── */
+.o-period-chips {
+  margin: 16px 0 14px;
+}
+.o-book-chips {
+  margin: 0 0 14px;
+}
+.o-period-chips .chip[aria-pressed='true'],
+.o-book-chips .chip[aria-pressed='true'] {
+  color: var(--white);
+}
+.o-book-chips .chip .icon {
+  width: 17px;
+  height: 17px;
+  color: var(--red);
+}
+.o-book-chips .chip[aria-pressed='true'] .icon {
+  color: var(--white);
+}
+.o-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--text-2);
+  background: var(--canvas);
+  border-radius: 999px;
+}
+.chip[aria-pressed='true'] .o-count {
+  color: var(--ink);
+  background: var(--white);
+}
+.o-test-group h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.o-group-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--red);
+}
+.o-tests-note {
+  margin: 0 0 14px;
+}
+@media (max-width: 640px) {
+  .o-period-chips,
+  .o-book-chips {
+    gap: 8px;
+  }
+  .o-period-chips .chip,
+  .o-book-chips .chip {
+    font-size: 12.5px;
+  }
+}
+/* A test row has many buttons: they take their own line, so the title keeps its width. */
+.o-test-group .o-row {
+  flex-wrap: wrap;
+}
+.o-test-group .o-row > .o-row-body {
+  flex: 1 1 260px;
+}
+.o-test-group .o-row > .o-row-actions {
+  flex-basis: 100%;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}

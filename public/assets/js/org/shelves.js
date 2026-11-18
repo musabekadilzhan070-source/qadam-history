@@ -90,7 +90,7 @@ async function pickBook(books, { taken = new Set(), current = null, title }) {
 }
 
 /** Ticks the tests of a book on a period. Resolves with the new list of ids, or null. */
-async function pickTests(state, period, book, selected) {
+export async function pickTests(state, period, book, selected) {
   const groups = periodGroups(state, period.id);
   if (!groups.length) {
     await dialog({
