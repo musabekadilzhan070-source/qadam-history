@@ -74,7 +74,7 @@ test('8th-grade pack: new topics go to Жаңа заман and go live, imported
   const topicsBefore = (await get('SELECT COUNT(*) AS n FROM topics')).n;
   process.env.QADAM_IMPORTS = '1';
   try {
-    await runImportsOnce();
+    await runImportsOnce(['history-8-modern-2026-11']);
   } finally {
     delete process.env.QADAM_IMPORTS;
   }
@@ -109,9 +109,78 @@ test('8th-grade pack: new topics go to Жаңа заман and go live, imported
   // Runs once: a second start changes nothing.
   process.env.QADAM_IMPORTS = '1';
   try {
-    await runImportsOnce();
+    await runImportsOnce(['history-8-modern-2026-11']);
   } finally {
     delete process.env.QADAM_IMPORTS;
   }
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + 25);
+});
+
+test('8th-grade Мектеп pack: its own topics next to the Атамұра ones, with the batyr helmet emblem', async () => {
+  const mektep = (await import('../server/imports/history-8-mektep.js')).default;
+  const org = client();
+  assert.equal((await org('POST', '/api/org/login', { pin: '908172' })).status, 200);
+  const { body: st } = await org('GET', '/api/org/state');
+  const modern = st.periods.find((p) => p.slug === 'zhana-zaman');
+  // As on the site: the first pack's topics are «8-сынып | Атамұра» (the test above tagged them Мектеп).
+  const { run } = await import('../server/db.js');
+  await run("UPDATE topics SET publisher = 'Атамұра' WHERE publisher = 'Мектеп'");
+  await run("UPDATE tests SET publisher = 'Атамұра' WHERE publisher = 'Мектеп'");
+  // An Атамұра topic with the same title as a Мектеп one must not be taken for it.
+  const same = mektep.find((p) => p.section === '§14');
+  const atam = await org('POST', '/api/org/topics', { period_id: modern.id, title: same.title, grade: 8, publisher: 'Атамұра', published: true });
+  assert.equal(atam.status, 201);
+  // Already imported earlier (tagged «8-сынып | Мектеп» with most of its questions): skipped.
+  const done = mektep.find((p) => p.section === '§5');
+  const t = await org('POST', '/api/org/topics', { period_id: modern.id, title: done.title, grade: 8, publisher: 'Мектеп', published: true });
+  const x = await org('POST', '/api/org/tests', { topic_id: t.body.id, title: done.title, questions: rowsToQuestions(done.rows).questions });
+  assert.equal(x.status, 201, JSON.stringify(x.body));
+  assert.equal((await org('POST', `/api/org/tests/${x.body.id}/publish`)).status, 200);
+
+  const topicsBefore = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  process.env.QADAM_IMPORTS = '1';
+  try {
+    await runImportsOnce(['history-8-mektep-2026-11']);
+  } finally {
+    delete process.env.QADAM_IMPORTS;
+  }
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-8-mektep-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  const report = JSON.parse(row.report);
+  assert.equal(report.publisher, 'Мектеп', row.report);
+  assert.equal(report.imported.length, mektep.length - 1);
+  assert.deepEqual(report.skipped, [`${done.section}. ${done.title}`]);
+  assert.equal(report.live, mektep.length - 1);
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + mektep.length - 1);
+  assert.equal((await all('SELECT id FROM tests WHERE topic_id = ?', atam.body.id)).length, 0, 'the Атамұра topic got nothing');
+
+  const made = await all("SELECT title, grade, publisher, icon, period_id FROM topics WHERE publisher = 'Мектеп' AND grade = 8 AND id <> ?", t.body.id);
+  const fresh = made.filter((m) => m.icon.includes('r-batyr-helmet'));
+  assert.equal(fresh.length, mektep.length - 1);
+  for (const m of fresh) {
+    assert.deepEqual(JSON.parse(m.icon), { kind: 'emblem', name: 'r-batyr-helmet', size: 36 });
+    assert.equal(m.period_id, modern.id);
+  }
+  const tests = await all("SELECT x.id, x.grade, x.publisher FROM tests x JOIN topics t ON t.id = x.topic_id WHERE t.publisher = 'Мектеп' AND t.icon LIKE '%r-batyr-helmet%'");
+  assert.equal(tests.length, mektep.length - 1);
+  assert.ok(tests.every((x) => x.grade === 8 && x.publisher === 'Мектеп'));
+
+  // Students: live, with the emblem; every question served.
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'mek@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const period = (await pupil('GET', '/api/periods/zhana-zaman')).body;
+  const shown = period.topics.filter((p) => p.publisher === 'Мектеп' && p.icon?.name === 'r-batyr-helmet');
+  assert.equal(shown.length, mektep.length - 1);
+  assert.ok(shown.every((p) => p.icon.size === 36));
+  const total = mektep.filter((p) => p !== done).reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+  assert.equal(shown.reduce((n, p) => n + p.question_count, 0), total);
+
+  // Once only.
+  process.env.QADAM_IMPORTS = '1';
+  try {
+    await runImportsOnce(['history-8-mektep-2026-11']);
+  } finally {
+    delete process.env.QADAM_IMPORTS;
+  }
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + mektep.length - 1);
 });
