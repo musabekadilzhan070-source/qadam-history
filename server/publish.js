@@ -195,6 +195,22 @@ export async function publishTests(testIds, topicIds, note) {
   return ready.map((x) => x.id);
 }
 
+/**
+ * Changes the topics and tests students see in place (tags, emblem), without publishing any other
+ * draft edit: `fn` edits a copy of the live version; it is stored as a new publication.
+ */
+export async function patchPublished(fn, note) {
+  const snapshot = structuredClone(await published());
+  fn(snapshot);
+  await run(
+    'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
+    String(note).slice(0, 200),
+    hashOf(snapshot),
+    JSON.stringify({ snapshot, draft: await dumpDraft() }),
+  );
+  cache = null;
+}
+
 /** 'hidden', 'live' or 'changed' (live, with saved edits students do not see yet). */
 export async function testLiveState(testId) {
   const live = (await published()).tests.find((x) => x.id === testId);

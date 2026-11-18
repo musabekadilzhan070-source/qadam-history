@@ -1,7 +1,7 @@
 import { all, get, run, batch } from './db.js';
 import { rowsToQuestions, duplicateKey } from './transfer.js';
 import { parseTest, writeTest, uniqueSlug } from './org.js';
-import { publishTests } from './publish.js';
+import { publishTests, patchPublished } from './publish.js';
 import { SUBJECT, TOPIC_PUBLISHERS } from './catalog.js';
 
 // One-time content imports shipped with the code. Each pack runs once per database (table
@@ -25,6 +25,16 @@ export const PACKS = [
     publisher: 'Мектеп',
     icon: { kind: 'emblem', name: 'r-batyr-helmet', size: 36 },
     load: async () => (await import('./imports/history-8-mektep.js')).default,
+  },
+  {
+    // The organizer's ask: these books are the 7th grade. «8-сынып | Атамұра» → «7-сынып | Атамұра»
+    // with Абылай ханның семсері (36 px); «8-сынып | Мектеп» → «7-сынып | Мектеп».
+    key: 'retag-8-to-7-2026-11',
+    run: () =>
+      retagGrade(8, 7, [
+        { publisher: 'Атамұра', icon: { kind: 'emblem', name: 'r-ablai-sword', size: 36 } },
+        { publisher: 'Мектеп' },
+      ]),
   },
 ];
 
@@ -70,7 +80,7 @@ async function runPacks(packs) {
       continue;
     }
     try {
-      const report = await importPack(pack, before);
+      const report = pack.run ? await pack.run() : await importPack(pack, before);
       await run("UPDATE content_imports SET status = 'done', report = ? WHERE key = ?", JSON.stringify(report), pack.key);
       console.log(`[import] ${pack.key}`, JSON.stringify(report));
     } catch (err) {
@@ -264,4 +274,53 @@ function mostCommon(list) {
   const count = new Map();
   for (const x of list) count.set(x, (count.get(x) || 0) + 1);
   return [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+}
+
+/**
+ * Moves every topic and test of one grade and publisher to another grade, on the draft and on
+ * what students see, without publishing anything else. A test counts by its own tags, or its
+ * topic's when it has none (as on the site). A topic gets the emblem when it is of that
+ * publisher, or when all its tests are.
+ */
+export async function retagGrade(from, to, books) {
+  const topics = await all('SELECT id, grade, publisher FROM topics WHERE deleted = 0');
+  const tests = await all('SELECT id, topic_id, grade, publisher FROM tests');
+  const topicOf = new Map(topics.map((t) => [t.id, t]));
+  const tagsOf = (x) => {
+    const t = topicOf.get(x.topic_id);
+    return { grade: x.grade || t?.grade || null, publisher: x.publisher || t?.publisher || '' };
+  };
+  const report = { from, to, books: [] };
+  const statements = [];
+  const patches = [];
+  for (const book of books) {
+    const testIds = tests.filter((x) => tagsOf(x).grade === from && tagsOf(x).publisher === book.publisher).map((x) => x.id);
+    const topicIds = topics.filter((t) => t.grade === from && t.publisher === book.publisher).map((t) => t.id);
+    const mine = new Set(testIds);
+    const iconTopics = book.icon
+      ? topics
+          .filter((t) => {
+            if (topicIds.includes(t.id)) return true;
+            const own = tests.filter((x) => x.topic_id === t.id);
+            return own.length && own.every((x) => mine.has(x.id));
+          })
+          .map((t) => t.id)
+      : [];
+    if (topicIds.length) statements.push([`UPDATE topics SET grade = ? WHERE id IN (${topicIds.join(',')})`, to]);
+    if (testIds.length) statements.push([`UPDATE tests SET grade = ? WHERE id IN (${testIds.join(',')})`, to]);
+    if (iconTopics.length) statements.push([`UPDATE topics SET icon = ? WHERE id IN (${iconTopics.join(',')})`, JSON.stringify(book.icon)]);
+    patches.push({ testIds: mine, topicIds: new Set(topicIds), iconTopics: new Set(iconTopics), icon: book.icon });
+    report.books.push({ publisher: book.publisher, topics: topicIds.length, tests: testIds.length, icons: iconTopics.length });
+  }
+  if (statements.length) await batch(statements);
+  await patchPublished((snap) => {
+    for (const p of patches) {
+      for (const t of snap.topics) {
+        if (p.topicIds.has(t.id)) t.grade = to;
+        if (p.iconTopics.has(t.id)) t.icon = p.icon;
+      }
+      for (const x of snap.tests) if (p.testIds.has(x.id)) x.grade = to;
+    }
+  }, `Сынып ауыстырылды: ${from}-сынып → ${to}-сынып (${books.map((b) => b.publisher).join(', ')})`);
+  return report;
 }

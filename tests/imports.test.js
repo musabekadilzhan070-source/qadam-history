@@ -184,3 +184,60 @@ test('8th-grade Мектеп pack: its own topics next to the Атамұра one
   }
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + mektep.length - 1);
 });
+
+test('8th grade → 7th grade: Атамұра with Абылай ханның семсері, Мектеп too; nothing else is published', async () => {
+  const { run } = await import('../server/db.js');
+  const org = client();
+  assert.equal((await org('POST', '/api/org/login', { pin: '908172' })).status, 200);
+  const { body: st } = await org('GET', '/api/org/state');
+  const modern = st.periods.find((p) => p.slug === 'zhana-zaman');
+  // A test with its own «8 | Атамұра» tags under an untagged topic, and a 9th-grade one that stays.
+  const plain = await org('POST', '/api/org/topics', { period_id: modern.id, title: 'Тегі жоқ тақырып', grade: 9, publisher: 'Атамұра', published: true });
+  await run("UPDATE topics SET grade = NULL, publisher = '' WHERE id = ?", plain.body.id);
+  const own = await org('POST', '/api/org/tests', { topic_id: plain.body.id, title: 'Өз тегі бар', grade: 8, publisher: 'Атамұра', questions: [{ type: 'single', text: 'С?', points: 1, options: [{ text: 'А', is_correct: true }, { text: 'Б' }] }] });
+  assert.equal((await org('POST', `/api/org/tests/${own.body.id}/publish`)).status, 200);
+  const nine = await org('POST', '/api/org/topics', { period_id: modern.id, title: '9-сынып тақырыбы', grade: 9, publisher: 'Атамұра', published: true });
+  // An unpublished edit of an 8th-grade test must stay unpublished.
+  const anyAtam = await get("SELECT x.id, x.title FROM tests x JOIN topics t ON t.id = x.topic_id WHERE t.grade = 8 AND t.publisher = 'Атамұра' LIMIT 1");
+  await run('UPDATE tests SET title = ? WHERE id = ?', 'Жарияланбаған өзгеріс', anyAtam.id);
+
+  const atamBefore = (await all("SELECT id FROM topics WHERE grade = 8 AND publisher = 'Атамұра' AND deleted = 0")).length;
+  const mekBefore = (await all("SELECT id FROM topics WHERE grade = 8 AND publisher = 'Мектеп' AND deleted = 0")).length;
+  const sevenBefore = (await all("SELECT id FROM topics WHERE grade = 7 AND publisher = 'Атамұра'")).length;
+  assert.ok(atamBefore > 20 && mekBefore > 40);
+  process.env.QADAM_IMPORTS = '1';
+  try {
+    await runImportsOnce(['retag-8-to-7-2026-11']);
+  } finally {
+    delete process.env.QADAM_IMPORTS;
+  }
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'retag-8-to-7-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  assert.equal((await all('SELECT id FROM topics WHERE grade = 8 AND deleted = 0')).length, 0);
+  assert.equal((await all("SELECT id FROM topics WHERE grade = 7 AND publisher = 'Атамұра'")).length, atamBefore + sevenBefore);
+  assert.equal((await all("SELECT id FROM topics WHERE grade = 7 AND publisher = 'Мектеп'")).length, mekBefore);
+  assert.equal((await get('SELECT grade FROM tests WHERE id = ?', own.body.id)).grade, 7);
+  assert.equal((await get('SELECT grade FROM topics WHERE id = ?', nine.body.id)).grade, 9);
+  const atamIcons = await all("SELECT icon FROM topics WHERE grade = 7 AND publisher = 'Атамұра' AND title <> 'Жоба тақырып'");
+  assert.ok(atamIcons.every((t) => JSON.parse(t.icon).name === 'r-ablai-sword' && JSON.parse(t.icon).size === 36));
+  assert.equal(JSON.parse((await get('SELECT icon FROM topics WHERE id = ?', plain.body.id)).icon).name, 'r-ablai-sword', 'all its tests are Атамұра');
+  const mekIcons = await all("SELECT icon FROM topics WHERE grade = 7 AND publisher = 'Мектеп' AND icon LIKE '%helmet%'");
+  assert.equal(mekIcons.length, mekBefore - 1, 'Мектеп keeps its helmet (one topic was made by hand in the test)');
+
+  // Students see it at once; the unpublished edit stays unpublished.
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'seven@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const { body: list } = await pupil('GET', '/api/tests');
+  const tests = list.tests || list;
+  assert.ok(!tests.some((x) => x.grade === 8), 'no 8th-grade test left');
+  assert.ok(tests.some((x) => x.grade === 7 && x.publisher === 'Атамұра'));
+  assert.ok(tests.some((x) => x.grade === 7 && x.publisher === 'Мектеп'));
+  assert.ok(tests.some((x) => x.id === own.body.id && x.grade === 7));
+  assert.ok(!tests.some((x) => x.title === 'Жарияланбаған өзгеріс'));
+  const period = (await pupil('GET', '/api/periods/zhana-zaman')).body;
+  // (The test above retagged the first pack Атамұра on the draft only, so match by id.)
+  const draftAtam = new Set((await all("SELECT id FROM topics WHERE grade = 7 AND publisher = 'Атамұра' AND icon LIKE '%ablai%'")).map((t) => t.id));
+  const atamTopics = period.topics.filter((t) => draftAtam.has(t.id));
+  assert.ok(atamTopics.length && atamTopics.every((t) => t.icon?.name === 'r-ablai-sword' && t.icon.size === 36));
+  assert.ok(!period.topics.some((t) => t.grade === 8));
+});
