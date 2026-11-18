@@ -95,7 +95,7 @@ const optId = (v) => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
-async function uniqueSlug(title, exceptId = null) {
+export async function uniqueSlug(title, exceptId = null) {
   const base = latin(title) || 'takyryp';
   let slug = base;
   for (let i = 2; await get('SELECT 1 AS ok FROM topics WHERE slug = ? AND id IS NOT ?', slug, exceptId); i += 1) slug = `${base}-${i}`;
@@ -304,7 +304,7 @@ const tag = (r) => {
   return r.value;
 };
 
-async function parseTest(body) {
+export async function parseTest(body) {
   const topicId = optId(body.topic_id);
   if (!topicId) fail('Тестті тақырыпқа байланыстырыңыз.');
   await checkTopic(topicId);
@@ -329,7 +329,7 @@ async function parseTest(body) {
 }
 
 /** Writes a parsed test over test `id`: rows are kept by id, new ones inserted, the rest removed. */
-async function writeTest(id, test) {
+export async function writeTest(id, test) {
   const existingQ = new Set((await all('SELECT id FROM questions WHERE test_id = ?', id)).map((r) => r.id));
   const existingO = new Map(
     (await all('SELECT o.id, o.question_id FROM options o JOIN questions q ON q.id = o.question_id WHERE q.test_id = ?', id)).map((r) => [
