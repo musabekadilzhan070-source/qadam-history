@@ -164,6 +164,37 @@ export async function publishTest(testId, live, note) {
   return null;
 }
 
+/**
+ * Puts several tests live in one publication, like publishTest does for one: the rest of the
+ * draft stays as it is. Topics in `topicIds` (and the topics of these tests) are taken from the
+ * draft, so a topic moved to another period shows there. Returns the ids that went live.
+ */
+export async function publishTests(testIds, topicIds, note) {
+  const dump = await dumpDraft();
+  const current = await published();
+  const fresh = snapshotFrom(dump);
+  const want = new Set(testIds);
+  const ready = fresh.tests.filter((x) => want.has(x.id));
+  const refresh = new Set([...topicIds, ...ready.map((x) => x.topic_id)]);
+  const freshIds = new Set(fresh.topics.map((t) => t.id));
+  const topics = current.topics.filter((t) => !(refresh.has(t.id) && freshIds.has(t.id)));
+  for (const t of fresh.topics) if (refresh.has(t.id)) topics.push(t);
+  const topicOrder = new Map(fresh.topics.map((t, i) => [t.id, i]));
+  topics.sort((a, b) => (topicOrder.get(a.id) ?? 1e9) - (topicOrder.get(b.id) ?? 1e9));
+  const tests = [...current.tests.filter((x) => !want.has(x.id)), ...ready];
+  const order = new Map(fresh.tests.map((x, i) => [x.id, i]));
+  tests.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+  const snapshot = { ...current, topics, tests };
+  await run(
+    'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
+    String(note).slice(0, 200),
+    hashOf(snapshot),
+    JSON.stringify({ snapshot, draft: dump }),
+  );
+  cache = null;
+  return ready.map((x) => x.id);
+}
+
 /** 'hidden', 'live' or 'changed' (live, with saved edits students do not see yet). */
 export async function testLiveState(testId) {
   const live = (await published()).tests.find((x) => x.id === testId);

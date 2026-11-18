@@ -353,6 +353,13 @@ CREATE TABLE IF NOT EXISTS period_book_tests (
   PRIMARY KEY (entry_id, test_id)
 );
 CREATE INDEX IF NOT EXISTS idx_period_book_tests_test ON period_book_tests(test_id);
+-- One-time content imports shipped with the code (server/imports.js): a key is run once, the report is kept.
+CREATE TABLE IF NOT EXISTS content_imports (
+  key TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'running',
+  report TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 const COLUMNS = [
