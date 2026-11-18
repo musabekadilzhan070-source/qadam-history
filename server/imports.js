@@ -18,7 +18,8 @@ const PACKS = [
   },
 ];
 
-const enabled = () => process.env.QADAM_IMPORTS === '1' || process.env.VERCEL_ENV === 'production';
+// Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
+const enabled = () => process.env.QADAM_IMPORTS === '1' || (process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production');
 
 // Titles compared without the «§1–2.» prefix, case, punctuation and Latin/Cyrillic look-alikes (ХVІІІ = XVIII).
 const LOOKALIKE = { х: 'x', і: 'i', в: 'v', с: 'c', о: 'o', а: 'a', е: 'e', р: 'p' };
