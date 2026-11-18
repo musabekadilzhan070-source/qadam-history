@@ -11,6 +11,7 @@ process.env.DB_FILE = path.join(tmp, 'test.sqlite');
 process.env.ORGANIZER_PIN = '908172';
 delete process.env.TURSO_DATABASE_URL;
 delete process.env.QADAM_IMPORTS;
+delete process.env.VERCEL_ENV;
 const { app, whenReady } = await import('../server/app.js');
 await whenReady();
 const { runImportsOnce, titleKey } = await import('../server/imports.js');
