@@ -6,7 +6,8 @@ import { TYPES, MAIN_TYPES, TYPE_LABELS, CHOICE_TYPES, questionProblems, testPro
 import { GRADES, PUBLISHERS, SUBJECT, gradeLabel, tagLine } from '../catalog.js';
 import { exportButtons, importQuestions, TEMPLATE_URL } from './transfer.js';
 import { copyLink, linkUrl, mountLinkCard } from './links.js';
-import { mountShelfCard } from './shelves.js';
+import { mountShelfCard, pickTests } from './shelves.js';
+import { pad2 } from '../util.js';
 import { esc, icon, toast, dialog, confirmDialog, select, fileField, bindFileFields, busy, moved, topicOptions, topicTitle } from './ui.js';
 
 // Test builder: settings, seven question formats, checks before publishing and a student preview.
@@ -84,12 +85,20 @@ const hasContent = (q) =>
   );
 
 // ─── List ────────────────────────────────────────────────────────
-async function createTest(ctx, topicId = '') {
+async function createTest(ctx, topicId = '', { periodId = null, entryId = null, bookName = '' } = {}) {
+  // From a period's book: only that period's topics, and the new test goes into the book.
+  let options = topicOptions(ctx.state, { empty: '— Тақырыпты таңдаңыз —' });
+  if (periodId) {
+    const ids = new Set(ctx.state.topics.filter((t) => t.period_id === periodId).map((t) => String(t.id)));
+    options = options.filter((o) => o.value === '' || ids.has(String(o.value)));
+    if (!topicId && ids.size === 1) topicId = [...ids][0];
+  }
   let values = { title: '', topic_id: topicId };
   const ok = await dialog({
     title: 'Жаңа тест құру',
     body: `<label class="o-field"><span class="o-label">Тест атауы <i>*</i></span><input id="nt-title" maxlength="160" /></label>
-      ${select({ name: 'nt-topic', label: 'Тақырып', value: topicId, options: topicOptions(ctx.state, { empty: '— Тақырыпты таңдаңыз —' }), required: true })}
+      ${select({ name: 'nt-topic', label: 'Тақырып', value: topicId, options, required: true })}
+      ${bookName ? `<p class="o-muted">Тест «${esc(bookName)}» кітабына бірден қосылады.</p>` : ''}
       <p class="o-muted">Сипаттама, мұқаба, уақыт және ұпай баптаулары келесі бетте.</p>`,
     buttons: [
       { label: 'Болдырмау', value: false, kind: 'ghost' },
@@ -109,6 +118,7 @@ async function createTest(ctx, topicId = '') {
   if (!values.topic_id) return toast('Тестті тақырыпқа байланыстырыңыз.', 'error');
   try {
     const r = await org.post('/tests', { title: values.title, topic_id: Number(values.topic_id), questions: [] });
+    if (entryId) await org.put(`/period-books/test/${r.id}`, { entry_ids: [entryId] }).catch(() => {});
     toast('Тест құрылды. Енді сұрақтарды қосыңыз.');
     ctx.navigate(`/organizer/tests/${r.id}`);
   } catch (err) {
@@ -154,65 +164,269 @@ async function publishTest(id, live) {
   }
 }
 
-export function testsView(el, _params, ctx) {
+const bookLabel = (b) => [gradeLabel(b.grade), b.publisher].filter(Boolean).join(' | ');
+const NO_TOPIC = 'no-topic';
+const LIST_KEY = 'qadam_org_tests_period';
+
+/**
+ * «Тесттер»: one historical period at a time (buttons at the top), and inside it the tests of
+ * each book of the period («8-сынып | Атамұра», «8-сынып | Мектеп» …), then the tests that are in
+ * no book yet. A period without books lists its tests by topic. The choice stays in the address
+ * (?period=…&book=…), so a reload or the way back from a test returns to the same place.
+ */
+export async function testsView(el, _params, ctx, alive) {
+  let [{ entries }, { books }] = await Promise.all([org.get('/period-books'), org.get('/books')]);
+  if (!alive()) return;
+  const query = new URLSearchParams(location.search);
+  let period = query.get('period') || '';
+  let book = query.get('book') || '';
+  if (!period) {
+    try {
+      period = localStorage.getItem(LIST_KEY) || '';
+    } catch {
+      /* no storage: the first period */
+    }
+  }
+
+  const s = () => ctx.state;
+  const bookOf = (e) => books.find((b) => b.id === e.book_id) || null;
+  const entryName = (e) => {
+    const b = bookOf(e);
+    return b ? bookLabel(b) || b.title : 'Кітап табылмады';
+  };
+  /** A period's tests in its own order: topics, then tests in each topic. */
+  const periodTests = (pid) => s().topics.filter((t) => t.period_id === pid).flatMap((t) => s().tests.filter((x) => x.topic_id === t.id));
+  const unlinked = () => s().tests.filter((x) => !x.topic_id || !s().topics.some((t) => t.id === x.topic_id));
+  const entriesOf = (pid) => entries.filter((e) => e.period_id === pid);
+
+  function fixChoice() {
+    const ps = s().periods;
+    if (period === NO_TOPIC && !unlinked().length) period = '';
+    if (period !== NO_TOPIC && !ps.some((p) => p.slug === period)) period = (ps.find((p) => periodTests(p.id).length) || ps[0])?.slug || '';
+    const p = ps.find((x) => x.slug === period);
+    const list = p ? entriesOf(p.id) : [];
+    if (book && book !== 'none' && !list.some((e) => String(e.id) === book)) book = '';
+  }
+  function remember() {
+    const qs = new URLSearchParams();
+    if (period) qs.set('period', period);
+    if (book) qs.set('book', book);
+    history.replaceState(null, '', `/organizer/tests${qs.toString() ? `?${qs}` : ''}`);
+    try {
+      localStorage.setItem(LIST_KEY, period);
+    } catch {
+      /* not kept */
+    }
+  }
+
+  const row = (x) => {
+    const siblings = s().tests.filter((t) => t.topic_id === x.topic_id);
+    const i = siblings.indexOf(x);
+    const topic = s().topics.find((t) => t.id === x.topic_id);
+    return `<li class="o-row" data-id="${x.id}">
+      <div class="o-order">
+        <button type="button" class="o-icon-btn" data-act="up" ${i <= 0 ? 'disabled' : ''} aria-label="Тақырып ішінде жоғары" title="Тақырып ішінде жоғары">▲</button>
+        <button type="button" class="o-icon-btn" data-act="down" ${i === siblings.length - 1 ? 'disabled' : ''} aria-label="Тақырып ішінде төмен" title="Тақырып ішінде төмен">▼</button>
+      </div>
+      <span class="o-row-icon">${icon('tests')}</span>
+      <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
+        <small>${topic ? `${esc(topic.title)} · ` : ''}${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small>
+        ${
+          x.share_id
+            ? `<div class="o-link-line"><span class="o-badge ${x.link_enabled ? 'o-badge-on' : 'o-badge-off'}">${x.link_enabled ? 'Сілтеме қосулы' : 'Сілтеме өшірулі'}</span>
+                <a class="btn btn-ghost btn-sm" href="/t/${esc(x.share_id)}" target="_blank" rel="noopener">Тестті ашу</a>
+                <button type="button" class="btn btn-ghost btn-sm" data-act="copy-link">Сілтемені көшіру</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-act="link-toggle" aria-pressed="${x.link_enabled}">${x.link_enabled ? 'Сілтеме арқылы тапсыруды өшіру' : 'Сілтеме арқылы тапсыру'}</button>
+                <a class="btn btn-ghost btn-sm" href="/organizer/links?test=${x.id}" data-link>Нәтижелерді көру</a></div>`
+            : ''
+        }</div>
+      ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
+      <div class="o-row-actions">
+        <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
+        ${topic ? '<button type="button" class="btn btn-ghost btn-sm" data-act="books">Кезеңі мен кітабы</button>' : ''}
+        <button type="button" class="btn btn-ghost btn-sm" data-act="duplicate">Көшірме</button>
+        ${exportButtons(x.id)}
+        <button type="button" class="btn btn-ghost btn-sm" data-act="toggle">${x.live ? 'Жасыру' : 'Жариялау'}</button>
+        <button type="button" class="o-icon-btn o-danger" data-act="delete" aria-label="Жою" title="Жою">${icon('cross')}</button>
+      </div>
+    </li>`;
+  };
+  const rows = (list, empty) => (list.length ? `<ol class="o-rows">${list.map(row).join('')}</ol>` : `<p class="o-muted">${empty}</p>`);
+  const group = ({ eyebrow = '', title, head = '', actions = '', list, empty, attrs = '' }) => `
+    <section class="o-card o-card-tight o-test-group" ${attrs}>
+      <div class="o-card-head"><div>${eyebrow ? `<p class="eyebrow">${esc(eyebrow)}</p>` : ''}<h2>${head}${esc(title)} <span class="o-count">${list.length}</span></h2></div>
+        ${actions ? `<div class="o-row-actions">${actions}</div>` : ''}</div>
+      ${rows(list, empty)}
+    </section>`;
+
+  function periodBody(p) {
+    const tests = periodTests(p.id);
+    const list = entriesOf(p.id);
+    const newBtn = (attrs = '') => `<button type="button" class="btn btn-ghost btn-sm" data-new-in="${p.id}" ${attrs}>+ Тест</button>`;
+    if (!list.length) {
+      // No books on this period yet: its tests by topic, as before.
+      const topics = s().topics.filter((t) => t.period_id === p.id);
+      return `
+        <p class="o-muted o-tests-note">Бұл кезеңге әлі кітап бекітілмеген, сондықтан тесттер тақырып бойынша көрсетілген. Кітапты <a href="/organizer/books" data-link>«Кітаптар»</a> бөлімінде (кітаптың «Тарихи кезеңі») немесе <a href="/organizer/period-books" data-link>«Кезең кітаптары»</a> бөлімінде бекітуге болады.</p>
+        ${
+          topics.length
+            ? topics
+                .map((t) =>
+                  group({
+                    eyebrow: p.title,
+                    title: t.title,
+                    list: s().tests.filter((x) => x.topic_id === t.id),
+                    empty: 'Бұл тақырыпта тест жоқ.',
+                    actions: `<button type="button" class="btn btn-ghost btn-sm" data-new="${t.id}">+ Тест</button>`,
+                  }),
+                )
+                .join('')
+            : '<section class="o-card"><p class="o-muted">Бұл кезеңде әлі тақырып жоқ. Алдымен «Тақырыптар» бөлімінде тақырып қосыңыз.</p></section>'
+        }`;
+    }
+    const inBook = new Set(list.flatMap((e) => e.test_ids));
+    const loose = tests.filter((x) => !inBook.has(x.id));
+    const chips = `
+      <div class="chips o-book-chips" role="group" aria-label="Кітап бойынша">
+        <button type="button" class="chip chip-all" data-book="" aria-pressed="${!book}">Барлық кітаптар <span class="o-count">${tests.length}</span></button>
+        ${list.map((e) => `<button type="button" class="chip chip-all" data-book="${e.id}" aria-pressed="${book === String(e.id)}">${icon('book')}${esc(entryName(e))} <span class="o-count">${tests.filter((x) => e.test_ids.includes(x.id)).length}</span></button>`).join('')}
+        ${loose.length ? `<button type="button" class="chip chip-all" data-book="none" aria-pressed="${book === 'none'}">Кітапсыз <span class="o-count">${loose.length}</span></button>` : ''}
+      </div>`;
+    const bookGroups = list
+      .filter((e) => !book || book === String(e.id))
+      .map((e) => {
+        const b = bookOf(e);
+        return group({
+          eyebrow: b?.title || '',
+          head: icon('book', 'icon o-group-icon'),
+          title: entryName(e),
+          list: tests.filter((x) => e.test_ids.includes(x.id)),
+          empty: 'Бұл кітапта әзірге тест жоқ. «+ Тест» батырмасымен жаңа тест қосыңыз немесе «Тесттерді белгілеу» арқылы бар тесттерді таңдаңыз.',
+          attrs: `data-entry="${e.id}"`,
+          actions: `${newBtn(`data-entry-new="${e.id}"`)}<button type="button" class="btn btn-ghost btn-sm" data-pick-tests="${e.id}">Тесттерді белгілеу</button>`,
+        });
+      });
+    const looseGroup =
+      (!book || book === 'none') && loose.length
+        ? group({
+            eyebrow: p.title,
+            title: 'Кітапқа бекітілмеген тесттер',
+            list: loose,
+            empty: '',
+            actions: newBtn(),
+          })
+        : '';
+    return `${chips}${bookGroups.join('')}${looseGroup}`;
+  }
+
   const draw = () => {
-    const s = ctx.state;
-    const groups = [
-      ...s.periods.flatMap((p) => s.topics.filter((t) => t.period_id === p.id).map((t) => ({ id: t.id, title: t.title, sub: p.title }))),
-      { id: null, title: 'Тақырыпқа байланыспаған тесттер', sub: 'Оқушыларға көрінбейді' },
-    ]
-      .map((g) => ({ ...g, tests: s.tests.filter((x) => x.topic_id === g.id) }))
-      .filter((g) => g.tests.length || g.id !== null);
+    fixChoice();
+    const ps = s().periods;
+    const p = ps.find((x) => x.slug === period);
+    const loose = unlinked();
     el.innerHTML = `
       <div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа тест құру</button>
         <button type="button" class="btn btn-dark" data-import>Сұрақтарды импорттау</button>
         <a class="btn btn-ghost" href="${TEMPLATE_URL}" download>Excel үлгісі</a></div>
-      ${groups
-        .map(
-          (g) => `<section class="o-card o-card-tight">
-            <div class="o-card-head"><div><p class="eyebrow">${esc(g.sub)}</p><h2>${esc(g.title)}</h2></div>
-              ${g.id ? `<button type="button" class="btn btn-ghost btn-sm" data-new="${g.id}">+ Тест</button>` : ''}</div>
-            ${
-              g.tests.length
-                ? `<ol class="o-rows">${g.tests
-                    .map(
-                      (x, i) => `<li class="o-row" data-id="${x.id}">
-                        <div class="o-order">
-                          <button type="button" class="o-icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Жоғары">▲</button>
-                          <button type="button" class="o-icon-btn" data-act="down" ${i === g.tests.length - 1 ? 'disabled' : ''} aria-label="Төмен">▼</button>
-                        </div>
-                        <span class="o-row-icon">${icon('tests')}</span>
-                        <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
-                          <small>${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small>
-                          ${
-                            x.share_id
-                              ? `<div class="o-link-line"><span class="o-badge ${x.link_enabled ? 'o-badge-on' : 'o-badge-off'}">${x.link_enabled ? 'Сілтеме қосулы' : 'Сілтеме өшірулі'}</span>
-                                  <a class="btn btn-ghost btn-sm" href="/t/${esc(x.share_id)}" target="_blank" rel="noopener">Тестті ашу</a>
-                                  <button type="button" class="btn btn-ghost btn-sm" data-act="copy-link">Сілтемені көшіру</button>
-                                  <button type="button" class="btn btn-ghost btn-sm" data-act="link-toggle" aria-pressed="${x.link_enabled}">${x.link_enabled ? 'Сілтеме арқылы тапсыруды өшіру' : 'Сілтеме арқылы тапсыру'}</button>
-                                  <a class="btn btn-ghost btn-sm" href="/organizer/links?test=${x.id}" data-link>Нәтижелерді көру</a></div>`
-                              : ''
-                          }</div>
-                        ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
-                        <div class="o-row-actions">
-                          <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
-                          <button type="button" class="btn btn-ghost btn-sm" data-act="duplicate">Көшірме</button>
-                          ${exportButtons(x.id)}
-                          <button type="button" class="btn btn-ghost btn-sm" data-act="toggle">${x.live ? 'Жасыру' : 'Жариялау'}</button>
-                          <button type="button" class="o-icon-btn o-danger" data-act="delete" aria-label="Жою" title="Жою">${icon('cross')}</button>
-                        </div>
-                      </li>`,
-                    )
-                    .join('')}</ol>`
-                : '<p class="o-muted">Бұл тақырыпта тест жоқ.</p>'
-            }
-          </section>`,
-        )
-        .join('')}`;
+      <div class="chips o-period-chips" role="group" aria-label="Тарихи кезеңдер">
+        ${ps
+          .map(
+            (x) => `<button type="button" class="chip" data-period="${esc(x.slug)}" aria-pressed="${x.slug === period}">
+              <span class="chip-num">${pad2(x.position || x.id)}</span>${esc(x.title)} <span class="o-count">${periodTests(x.id).length}</span></button>`,
+          )
+          .join('')}
+        ${loose.length ? `<button type="button" class="chip chip-all" data-period="${NO_TOPIC}" aria-pressed="${period === NO_TOPIC}">Тақырыпқа байланыспаған <span class="o-count">${loose.length}</span></button>` : ''}
+      </div>
+      ${
+        period === NO_TOPIC
+          ? group({ eyebrow: 'Оқушыларға көрінбейді', title: 'Тақырыпқа байланыспаған тесттер', list: loose, empty: 'Мұндай тест жоқ.' })
+          : p
+            ? periodBody(p)
+            : '<section class="o-card"><p class="o-muted">Кезең жоқ.</p></section>'
+      }`;
   };
+
+  /** Which books of its period a test is in; the period follows the test's topic. */
+  async function editBooks(x) {
+    const topic = s().topics.find((t) => t.id === x.topic_id);
+    const p = s().periods.find((pp) => pp.id === topic?.period_id);
+    if (!p) return false;
+    const list = entriesOf(p.id);
+    let chosen = new Set(list.filter((e) => e.test_ids.includes(x.id)).map((e) => e.id));
+    const ok = await dialog({
+      title: `«${x.title}»: кезеңі мен кітабы`,
+      body: `
+        <p><b>Кезеңі:</b> ${esc(p.title)} · <b>Тақырыбы:</b> ${esc(topic.title)}</p>
+        <p class="o-muted">Тест кезеңге тақырыбы арқылы тиесілі. Басқа кезеңге ауыстыру үшін тест бетінде <a href="/organizer/tests/${x.id}" data-link data-close-link>тақырыбын өзгертіңіз</a>.</p>
+        ${
+          list.length
+            ? `<p class="o-label">Қай кітапта көрінеді</p><div class="o-shelf-checks">${list
+                .map((e) => {
+                  const b = bookOf(e);
+                  return `<label class="o-check-row"><input type="checkbox" value="${e.id}" ${chosen.has(e.id) ? 'checked' : ''} />
+                    <span><b>${esc(entryName(e))}</b><small>${esc(b?.title || '')}${b && !b.published ? ' · кітап жасырын' : ''}</small></span></label>`;
+                })
+                .join('')}</div>`
+            : '<p class="o-muted">Бұл кезеңге әлі кітап бекітілмеген.</p>'
+        }`,
+      buttons: list.length
+        ? [
+            { label: 'Болдырмау', value: false, kind: 'ghost' },
+            { label: 'Сақтау', value: true },
+          ]
+        : [{ label: 'Жабу', value: false, kind: 'ghost' }],
+      onOpen(box, close) {
+        box.addEventListener('change', () => {
+          chosen = new Set([...box.querySelectorAll('input[type="checkbox"]:checked')].map((c) => Number(c.value)));
+        });
+        box.querySelector('[data-close-link]')?.addEventListener('click', () => close(false));
+      },
+    });
+    if (!ok) return false;
+    const r = await org.put(`/period-books/test/${x.id}`, { entry_ids: [...chosen] });
+    entries = entries.filter((e) => e.period_id !== p.id).concat(r.entries);
+    toast('Тесттің кітаптары сақталды.');
+    return true;
+  }
+
   el.addEventListener('click', async (e) => {
+    const chip = e.target.closest('[data-period]');
+    if (chip) {
+      period = chip.dataset.period;
+      book = '';
+      remember();
+      return draw();
+    }
+    const bookChip = e.target.closest('[data-book]');
+    if (bookChip) {
+      book = bookChip.dataset.book;
+      remember();
+      return draw();
+    }
     const nb = e.target.closest('[data-new]');
     if (nb) return createTest(ctx, nb.dataset.new || '');
+    const inPeriod = e.target.closest('[data-new-in]');
+    if (inPeriod) {
+      const entry = entries.find((x) => x.id === Number(inPeriod.dataset.entryNew));
+      return createTest(ctx, '', { periodId: Number(inPeriod.dataset.newIn), entryId: entry?.id || null, bookName: entry ? entryName(entry) : '' });
+    }
+    const pick = e.target.closest('[data-pick-tests]');
+    if (pick) {
+      const entry = entries.find((x) => x.id === Number(pick.dataset.pickTests));
+      const p = s().periods.find((x) => x.id === entry?.period_id);
+      if (!entry || !p) return;
+      try {
+        const ids = await pickTests(s(), p, bookOf(entry), periodTests(p.id).filter((x) => entry.test_ids.includes(x.id)).map((x) => x.id));
+        if (!ids) return;
+        const saved = await org.put(`/period-books/${entry.id}`, { test_ids: ids });
+        entries = entries.map((x) => (x.id === entry.id ? saved : x));
+        toast(`Сақталды: ${ids.length} тест.`);
+        draw();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+      return;
+    }
     if (e.target.closest('[data-import]')) {
       const id = await importQuestions(ctx);
       if (id) {
@@ -221,15 +435,18 @@ export function testsView(el, _params, ctx) {
       }
       return;
     }
-    const row = e.target.closest('.o-row');
+    const rowEl = e.target.closest('.o-row');
     const btn = e.target.closest('[data-act]');
-    if (!row || !btn) return;
+    if (!rowEl || !btn) return;
     const act = btn.dataset.act;
-    const x = ctx.state.tests.find((t) => t.id === Number(row.dataset.id));
+    const x = s().tests.find((t) => t.id === Number(rowEl.dataset.id));
+    if (!x) return;
     await busy(btn, async () => {
       if (act === 'up' || act === 'down') {
-        const list = ctx.state.tests.filter((t) => t.topic_id === x.topic_id);
+        const list = s().tests.filter((t) => t.topic_id === x.topic_id);
         await org.post('/tests/reorder', { ids: moved(list, list.indexOf(x), act === 'up' ? -1 : 1).map((t) => t.id) });
+      } else if (act === 'books') {
+        if (!(await editBooks(x))) return;
       } else if (act === 'toggle') {
         if (!x.topic_id && !x.live) return toast('Алдымен тестті тақырыпқа байланыстырыңыз (тестті өңдеу бетінде).', 'error');
         if (!(await publishTest(x.id, !x.live))) return;
@@ -238,6 +455,7 @@ export function testsView(el, _params, ctx) {
         toast(`Көшірме жасалды: «${copy.title}». Ол жасырын күйде.`);
       } else if (act === 'delete') {
         if (!(await deleteTest(ctx, x))) return;
+        ({ entries } = await org.get('/period-books'));
       } else if (act === 'copy-link') {
         if (!(await copyLink(x.id, x.share_id, x.link_enabled))) return;
       } else if (act === 'link-toggle') {
@@ -249,6 +467,7 @@ export function testsView(el, _params, ctx) {
     });
   });
   draw();
+  remember();
 }
 
 // ─── Editor ──────────────────────────────────────────────────────

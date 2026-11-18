@@ -37,10 +37,13 @@ export async function readerView(el, [id], app, alive) {
   if (!alive()) return;
   app.setTitle(book.title);
   const meta = [book.subject, gradeLabel(book.grade), book.publisher].filter(Boolean).join(' · ');
+  // Opened from a period's book: the way back is to that book's tests.
+  const from = new URLSearchParams(location.search).get('from') || '';
+  const back = /^\/periods\/[\w-]+\/books\/\d+$/.test(from) ? { href: from, label: 'Тесттерге оралу' } : { href: '/books', label: 'Кітаптар' };
   el.innerHTML = `
     <div class="reader" data-mode="scroll">
       <div class="reader-head">
-        <a class="link-more reader-back" href="/books" data-link>${icon('back')} Кітаптар</a>
+        <a class="link-more reader-back" href="${back.href}" data-link>${icon('back')} ${back.label}</a>
         <div class="reader-title"><h1>${esc(book.title)}</h1><p>${esc(meta)}</p></div>
       </div>
       <div class="reader-bar panel" role="toolbar" aria-label="Кітапты басқару">

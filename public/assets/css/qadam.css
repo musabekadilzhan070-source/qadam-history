@@ -4038,7 +4038,8 @@ html.reader-full-open body {
 .book-head-body {
   min-width: 0;
 }
-.book-head h1 {
+.book-head h1,
+.book-head h2 {
   margin: 0 0 8px;
   font-size: clamp(20px, 2.4vw, 26px);
   font-weight: 900;
@@ -4089,6 +4090,38 @@ html.reader-full-open body {
   }
   .book-head .eyebrow::before {
     display: none;
+  }
+}
+
+/* The book buttons at the top of a period: the chosen one is dark, like a chosen chip. */
+.book-tabs {
+  margin: 0 0 18px;
+}
+.book-tabs-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 900;
+}
+.chip-book {
+  padding-left: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+.chip-book .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--red);
+}
+.chip-book[aria-pressed='true'] .icon {
+  color: var(--white);
+}
+@media (max-width: 640px) {
+  .book-tabs .chips {
+    gap: 8px;
+  }
+  .chip-book {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
   }
 }
 
