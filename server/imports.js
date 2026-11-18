@@ -9,12 +9,22 @@ import { SUBJECT, TOPIC_PUBLISHERS } from './catalog.js';
 // A topic that is already on the site (same title, or most of its questions already in one of
 // its tests) is not imported again; it is only moved to the pack's period if it is elsewhere.
 
-const PACKS = [
+export const PACKS = [
   {
     key: 'history-8-modern-2026-11',
     period: { slug: 'zhana-zaman', title: 'Жаңа заман' },
     grade: 8,
     load: async () => (await import('./imports/history-8-modern.js')).default,
+  },
+  {
+    // The Мектеп book of the same grade: its own topics next to the Атамұра ones, matched only
+    // against topics already tagged «8-сынып | Мектеп» (the Атамұра topics have similar titles).
+    key: 'history-8-mektep-2026-11',
+    period: { slug: 'zhana-zaman', title: 'Жаңа заман' },
+    grade: 8,
+    publisher: 'Мектеп',
+    icon: { kind: 'emblem', name: 'r-batyr-helmet', size: 36 },
+    load: async () => (await import('./imports/history-8-mektep.js')).default,
   },
 ];
 
@@ -31,17 +41,17 @@ export const titleKey = (s) =>
     .replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** Runs every pack that has not run on this database yet. Never throws: the site keeps working. */
-export async function runImportsOnce() {
+export async function runImportsOnce(only = null) {
   if (!enabled()) return;
   try {
-    await runPacks();
+    await runPacks(only ? PACKS.filter((p) => only.includes(p.key)) : PACKS);
   } catch (err) {
     console.error('[import] skipped:', err);
   }
 }
 
-async function runPacks() {
-  for (const pack of PACKS) {
+async function runPacks(packs) {
+  for (const pack of packs) {
     const row = await get("SELECT status, report, (julianday('now') - julianday(created_at)) * 1440 AS minutes FROM content_imports WHERE key = ?", pack.key);
     // A run that stopped half-way (a timed-out function) is picked up again after 10 minutes.
     if (row && (row.status === 'done' || row.minutes < 10)) continue;
@@ -86,8 +96,14 @@ export async function importPack(pack, before = null) {
   if (!period) throw new Error(`Кезең табылмады: ${pack.period.title}`);
   const items = await pack.load();
 
-  const topics = await all('SELECT id, period_id, title, grade, publisher FROM topics WHERE deleted = 0');
-  const tests = await all('SELECT id, topic_id, title FROM tests');
+  let topics = await all('SELECT id, period_id, title, grade, publisher FROM topics WHERE deleted = 0');
+  let tests = await all('SELECT id, topic_id, title FROM tests');
+  if (pack.publisher) {
+    // A pack of one book compares itself only with that book's topics.
+    topics = topics.filter((t) => t.grade === pack.grade && t.publisher === pack.publisher);
+    const mine = new Set(topics.map((t) => t.id));
+    tests = tests.filter((x) => mine.has(x.topic_id));
+  }
   const questions = await all('SELECT test_id, type, text FROM questions WHERE parent_id IS NULL');
   const keysByTest = new Map();
   for (const q of questions) {
@@ -123,7 +139,7 @@ export async function importPack(pack, before = null) {
   // Grade and publisher: as the topics of this set already on the site, otherwise this period's
   // 8th-grade book on its shelf, otherwise Атамұра.
   const tagged = parsed.map((i) => i.existing).filter((t) => t?.grade && t?.publisher);
-  let publisher = mostCommon(tagged.filter((t) => t.grade === pack.grade).map((t) => t.publisher));
+  let publisher = pack.publisher || mostCommon(tagged.filter((t) => t.grade === pack.grade).map((t) => t.publisher));
   if (!publisher) {
     const shelf = await all(
       'SELECT DISTINCT b.publisher FROM period_books e JOIN books b ON b.id = e.book_id WHERE e.period_id = ? AND b.grade = ?',
@@ -175,8 +191,8 @@ export async function importPack(pack, before = null) {
       const slug = await uniqueSlug(item.title);
       topicId = (
         await run(
-          `INSERT INTO topics (period_id, slug, position, title, range_label, summary, body, key_points, published, grade, publisher)
-           VALUES (?, ?, ?, ?, '', ?, '', '[]', 1, ?, ?)`,
+          `INSERT INTO topics (period_id, slug, position, title, range_label, summary, body, key_points, published, grade, publisher, icon)
+           VALUES (?, ?, ?, ?, '', ?, '', '[]', 1, ?, ?, ?)`,
           period.id,
           slug,
           position,
@@ -184,6 +200,7 @@ export async function importPack(pack, before = null) {
           `${SUBJECT}, ${pack.grade}-сынып, ${item.section}.`,
           pack.grade,
           publisher,
+          pack.icon ? JSON.stringify(pack.icon) : '',
         )
       ).lastInsertRowid;
     }
