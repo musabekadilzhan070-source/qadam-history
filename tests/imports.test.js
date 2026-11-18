@@ -241,3 +241,38 @@ test('8th grade → 7th grade: Атамұра with Абылай ханның с�
   assert.ok(atamTopics.length && atamTopics.every((t) => t.icon?.name === 'r-ablai-sword' && t.icon.size === 36));
   assert.ok(!period.topics.some((t) => t.grade === 8));
 });
+
+test('every test of Орта ғасыр becomes «6-сынып | Атамұра», live at once, and goes into that book', async () => {
+  const { run } = await import('../server/db.js');
+  const org = client();
+  assert.equal((await org('POST', '/api/org/login', { pin: '908172' })).status, 200);
+  const { body: st } = await org('GET', '/api/org/state');
+  const middle = st.periods.find((p) => p.slug === 'orta-gasyr');
+  const topics = st.topics.filter((t) => t.period_id === middle.id);
+  assert.ok(topics.length);
+  // Mixed tags before: none, another grade, another publisher.
+  await run("UPDATE topics SET grade = NULL, publisher = '' WHERE id = ?", topics[0].id);
+  await run("UPDATE tests SET grade = 9, publisher = 'Мектеп' WHERE topic_id = ?", topics[0].id);
+  const other = st.topics.find((t) => t.period_id !== middle.id && !t.deleted);
+  const otherBefore = await get('SELECT grade, publisher FROM topics WHERE id = ?', other.id);
+  process.env.QADAM_IMPORTS = '1';
+  try {
+    await runImportsOnce(['tag-orta-gasyr-6-atamura-2026-11']);
+  } finally {
+    delete process.env.QADAM_IMPORTS;
+  }
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'tag-orta-gasyr-6-atamura-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  const left = await all(
+    "SELECT x.id FROM tests x JOIN topics t ON t.id = x.topic_id WHERE t.period_id = ? AND t.deleted = 0 AND NOT (x.grade = 6 AND x.publisher = 'Атамұра' AND t.grade = 6 AND t.publisher = 'Атамұра')",
+    middle.id,
+  );
+  assert.deepEqual(left, []);
+  assert.deepEqual(await get('SELECT grade, publisher FROM topics WHERE id = ?', other.id), otherBefore, 'other periods untouched');
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'six@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const { body: list } = await pupil('GET', '/api/tests');
+  const mid = (list.tests || list).filter((x) => x.period_slug === 'orta-gasyr');
+  assert.ok(mid.length);
+  assert.ok(mid.every((x) => x.grade === 6 && x.publisher === 'Атамұра'));
+});

@@ -36,6 +36,11 @@ export const PACKS = [
         { publisher: 'Мектеп' },
       ]),
   },
+  {
+    // Every test of «Орта ғасыр» is «6-сынып | Атамұра» (some had no tags or other ones).
+    key: 'tag-orta-gasyr-6-atamura-2026-11',
+    run: () => tagPeriod({ slug: 'orta-gasyr', title: 'Орта ғасыр' }, 6, 'Атамұра'),
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
@@ -323,4 +328,34 @@ export async function retagGrade(from, to, books) {
     }
   }, `Сынып ауыстырылды: ${from}-сынып → ${to}-сынып (${books.map((b) => b.publisher).join(', ')})`);
   return report;
+}
+
+/**
+ * Puts every topic and test of a period on one grade and publisher, on the draft and on what
+ * students see (nothing else is published). The period's books of that grade and publisher get
+ * all its tests, so none is left out of the book.
+ */
+export async function tagPeriod(where, grade, publisher) {
+  const period = (await get('SELECT id FROM periods WHERE slug = ?', where.slug)) || (await get('SELECT id FROM periods WHERE title = ?', where.title));
+  if (!period) throw new Error(`Кезең табылмады: ${where.title}`);
+  const topicIds = (await all('SELECT id FROM topics WHERE period_id = ? AND deleted = 0', period.id)).map((t) => t.id);
+  const testIds = topicIds.length ? (await all(`SELECT id FROM tests WHERE topic_id IN (${topicIds.join(',')})`)).map((x) => x.id) : [];
+  const statements = [];
+  if (topicIds.length) statements.push([`UPDATE topics SET grade = ?, publisher = ? WHERE id IN (${topicIds.join(',')})`, grade, publisher]);
+  if (testIds.length) statements.push([`UPDATE tests SET grade = ?, publisher = ? WHERE id IN (${testIds.join(',')})`, grade, publisher]);
+  const entries = await all(
+    'SELECT e.id FROM period_books e JOIN books b ON b.id = e.book_id WHERE e.period_id = ? AND b.grade = ? AND b.publisher = ?',
+    period.id,
+    grade,
+    publisher,
+  );
+  for (const e of entries) for (const t of testIds) statements.push(['INSERT OR IGNORE INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', e.id, t]);
+  if (statements.length) await batch(statements);
+  const topicSet = new Set(topicIds);
+  const testSet = new Set(testIds);
+  await patchPublished((snap) => {
+    for (const t of snap.topics) if (topicSet.has(t.id)) Object.assign(t, { grade, publisher });
+    for (const x of snap.tests) if (testSet.has(x.id)) Object.assign(x, { grade, publisher });
+  }, `${where.title}: барлық тест ${grade}-сынып | ${publisher}`);
+  return { period: where.title, grade, publisher, topics: topicIds.length, tests: testIds.length, shelf_entries: entries.length };
 }
