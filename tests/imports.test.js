@@ -343,3 +343,37 @@ test('Қазіргі заман, «8-сынып | Атамұра»: «1822 жы�
   assert.equal(mine.length, 21);
   assert.ok(mine.every((t) => t.icon?.name === 'e-charter-1822' && t.icon.size === 36 && t.icon.kind === 'emblem'));
 });
+
+test('Қазіргі заман, «8-сынып | Мектеп»: all 41 topics live with Жанқожа батыр 36 px', async () => {
+  const items = (await import('../server/imports/history-8-modern-mektep.js')).default;
+  const before = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  const go = async () => {
+    process.env.QADAM_IMPORTS = '1';
+    try {
+      await runImportsOnce(['history-8-modern-mektep-2026-11']);
+    } finally {
+      delete process.env.QADAM_IMPORTS;
+    }
+  };
+  await go();
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-8-modern-mektep-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  const report = JSON.parse(row.report);
+  assert.equal(report.publisher, 'Мектеп');
+  assert.equal(report.imported.length, 41);
+  assert.equal(report.live, 41);
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 41);
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'now8m@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const period = (await pupil('GET', '/api/periods/kazirgi-zaman')).body;
+  const shown = period.topics.filter((t) => t.grade === 8 && t.publisher === 'Мектеп');
+  assert.equal(shown.length, 41);
+  assert.ok(shown.every((t) => t.icon?.name === 'up-zhankozha' && t.icon.size === 36));
+  const total = items.reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+  assert.equal(total, 953);
+  assert.equal(shown.reduce((n, p) => n + p.question_count, 0), total);
+  // The Атамұра topics of the period keep their own emblem.
+  assert.ok(period.topics.filter((t) => t.grade === 8 && t.publisher === 'Атамұра').every((t) => t.icon?.name === 'e-charter-1822'));
+  await go();
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 41);
+});
