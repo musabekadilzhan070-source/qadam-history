@@ -9,6 +9,13 @@ import { SUBJECT, TOPIC_PUBLISHERS } from './catalog.js';
 // A topic that is already on the site (same title, or most of its questions already in one of
 // its tests) is not imported again; it is only moved to the pack's period if it is elsewhere.
 
+const TENTH_PERIODS = [
+  ['ancient', 'ezhelgi-zaman', 'Ежелгі заман', 'a-pottery'],
+  ['middle', 'orta-gasyr', 'Орта ғасыр', 't-turgesh-coin'],
+  ['modern', 'zhana-zaman', 'Жаңа заман', 'd-signal-fire'],
+  ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'i-khan-shatyr'],
+];
+
 export const PACKS = [
   {
     key: 'history-8-modern-2026-11',
@@ -86,12 +93,7 @@ export const PACKS = [
     load: async () => (await import('./imports/history-9-modern-mektep.js')).default,
   },
   // «10-сынып | Атамұра»: one test for each of the four periods, each with its own emblem (36 px).
-  ...[
-    ['ancient', 'ezhelgi-zaman', 'Ежелгі заман', 'a-pottery'],
-    ['middle', 'orta-gasyr', 'Орта ғасыр', 't-turgesh-coin'],
-    ['modern', 'zhana-zaman', 'Жаңа заман', 'd-signal-fire'],
-    ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'i-khan-shatyr'],
-  ].map(([part, slug, title, emblem]) => ({
+  ...TENTH_PERIODS.map(([part, slug, title, emblem]) => ({
     key: `history-10-atamura-${part}-2026-11`,
     period: { slug, title },
     grade: 10,
@@ -99,6 +101,28 @@ export const PACKS = [
     icon: { kind: 'emblem', name: emblem, size: 36 },
     load: async () => (await import('./imports/history-10-atamura.js'))[part],
   })),
+  {
+    // The corrected «10-сынып | Атамұра» set: its topics in the four periods, with the same four emblems.
+    // One pack, the periods one after another (parallel packs on several cold starts collided on question ids).
+    key: 'history-10-atamura-topics-2026-11',
+    run: async () => {
+      const data = await import('./imports/history-10-atamura-topics.js');
+      const reports = [];
+      for (const [part, slug, title, emblem] of TENTH_PERIODS) {
+        const pack = {
+          key: `history-10-atamura-topics-${part}`,
+          period: { slug, title },
+          grade: 10,
+          publisher: 'Атамұра',
+          samePeriod: true,
+          icon: { kind: 'emblem', name: emblem, size: 36 },
+          load: async () => data[part],
+        };
+        reports.push(await importPack(pack));
+      }
+      return reports;
+    },
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
@@ -174,6 +198,8 @@ export async function importPack(pack, before = null) {
   if (pack.publisher) {
     // A pack of one book compares itself only with that book's topics.
     topics = topics.filter((t) => t.grade === pack.grade && t.publisher === pack.publisher);
+    // One book over several periods repeats titles (§1–2 in each period): compare within the period only.
+    if (pack.samePeriod) topics = topics.filter((t) => t.period_id === period.id);
     const mine = new Set(topics.map((t) => t.id));
     tests = tests.filter((x) => mine.has(x.topic_id));
   }
@@ -199,7 +225,8 @@ export async function importPack(pack, before = null) {
     for (const x of tests) {
       const have = keysByTest.get(x.id);
       const overlap = have ? keys.filter((k) => have.has(k)).length : 0;
-      if (overlap >= Math.ceil(keys.length / 2) || (titleKey(x.title) === key && overlap > 0)) {
+      // samePeriod: only a test of the same title counts (the period's earlier one-test version shares questions).
+      if ((!pack.samePeriod && overlap >= Math.ceil(keys.length / 2)) || (titleKey(x.title) === key && overlap > 0)) {
         test = x;
         break;
       }
