@@ -55,6 +55,16 @@ export const PACKS = [
     key: 'icon-kazirgi-8-atamura-charter-2026-11',
     run: () => iconPeriod({ slug: 'kazirgi-zaman', title: 'Қазіргі заман' }, 8, 'Атамұра', { kind: 'emblem', name: 'e-charter-1822', size: 36 }),
   },
+  {
+    // «Қазіргі заман», «8-сынып | Мектеп»: 41 тақырып (§1–2 … §60) with Жанқожа батыр (36 px).
+    // Compared only with topics already tagged «8-сынып | Мектеп».
+    key: 'history-8-modern-mektep-2026-11',
+    period: { slug: 'kazirgi-zaman', title: 'Қазіргі заман' },
+    grade: 8,
+    publisher: 'Мектеп',
+    icon: { kind: 'emblem', name: 'up-zhankozha', size: 36 },
+    load: async () => (await import('./imports/history-8-modern-mektep.js')).default,
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
