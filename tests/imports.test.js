@@ -276,3 +276,46 @@ test('every test of Орта ғасыр becomes «6-сынып | Атамұра�
   assert.ok(mid.length);
   assert.ok(mid.every((x) => x.grade === 6 && x.publisher === 'Атамұра'));
 });
+
+test('Қазіргі заман, «8-сынып | Атамұра»: all 21 topics live, the period’s older topics untouched', async () => {
+  const items = (await import('../server/imports/history-8-modern-atamura.js')).default;
+  const org = client();
+  assert.equal((await org('POST', '/api/org/login', { pin: '908172' })).status, 200);
+  const { body: st } = await org('GET', '/api/org/state');
+  const recent = st.periods.find((p) => p.slug === 'kazirgi-zaman');
+  // An older topic of the period with one of the pack's titles: not taken for it, not moved.
+  const alash = items.find((p) => p.section === '§6–7');
+  const old = await org('POST', '/api/org/topics', { period_id: recent.id, title: alash.title, grade: 9, publisher: 'Атамұра', published: true });
+  assert.equal(old.status, 201);
+  const topicsBefore = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  const run = async () => {
+    process.env.QADAM_IMPORTS = '1';
+    try {
+      await runImportsOnce(['history-8-modern-atamura-2026-11']);
+    } finally {
+      delete process.env.QADAM_IMPORTS;
+    }
+  };
+  await run();
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-8-modern-atamura-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  const report = JSON.parse(row.report);
+  assert.equal(report.publisher, 'Атамұра');
+  assert.equal(report.grade, 8);
+  assert.equal(report.imported.length, 21);
+  assert.equal(report.live, 21);
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + 21);
+  assert.equal((await all('SELECT id FROM tests WHERE topic_id = ?', old.body.id)).length, 0);
+
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'now8@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const period = (await pupil('GET', '/api/periods/kazirgi-zaman')).body;
+  const shown = period.topics.filter((t) => t.grade === 8 && t.publisher === 'Атамұра');
+  assert.equal(shown.length, 21);
+  const total = items.reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+  assert.equal(total, 746);
+  assert.equal(shown.reduce((n, p) => n + p.question_count, 0), total);
+
+  await run();
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + 21);
+});
