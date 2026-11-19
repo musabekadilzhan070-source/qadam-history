@@ -481,3 +481,42 @@ test('«10-сынып | Атамұра»: one test in each of the four periods, 
   await go();
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 4);
 });
+
+test('«10-сынып | Атамұра» topics: each period gets its own topics, same titles in other periods are not taken for them', async () => {
+  const data = await import('../server/imports/history-10-atamura-topics.js');
+  const parts = [
+    ['ancient', 'ezhelgi-zaman', 'a-pottery'],
+    ['middle', 'orta-gasyr', 't-turgesh-coin'],
+    ['modern', 'zhana-zaman', 'd-signal-fire'],
+    ['recent', 'kazirgi-zaman', 'i-khan-shatyr'],
+  ];
+  const all20 = parts.reduce((n, [p]) => n + data[p].length, 0);
+  assert.equal(all20, 20);
+  const before = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  const go = async () => {
+    process.env.QADAM_IMPORTS = '1';
+    try {
+      await runImportsOnce(['history-10-atamura-topics-2026-11']);
+    } finally {
+      delete process.env.QADAM_IMPORTS;
+    }
+  };
+  await go();
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-10-atamura-topics-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  for (const r of JSON.parse(row.report)) assert.deepEqual([r.period, r.skipped, r.moved], [r.period, [], []], JSON.stringify(r));
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 20);
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'ten2@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  for (const [part, slug, emblem] of parts) {
+    const period = (await pupil('GET', `/api/periods/${slug}`)).body;
+    const titles = new Set(data[part].map((i) => i.title));
+    const shown = period.topics.filter((t) => t.grade === 10 && t.publisher === 'Атамұра' && titles.has(t.title));
+    assert.equal(shown.length, data[part].length, slug);
+    assert.ok(shown.every((t) => t.icon?.name === emblem && t.icon.size === 36));
+    const total = data[part].reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+    assert.equal(shown.reduce((n, t) => n + t.question_count, 0), total, slug);
+  }
+  await go();
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 20);
+});
