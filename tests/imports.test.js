@@ -377,3 +377,36 @@ test('Қазіргі заман, «8-сынып | Мектеп»: all 41 topics 
   await go();
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 41);
 });
+
+test('Қазіргі заман, «9-сынып | Атамұра»: all 32 topics live with the factory emblem 36 px', async () => {
+  const items = (await import('../server/imports/history-9-modern-atamura.js')).default;
+  const before = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  const go = async () => {
+    process.env.QADAM_IMPORTS = '1';
+    try {
+      await runImportsOnce(['history-9-modern-atamura-2026-11']);
+    } finally {
+      delete process.env.QADAM_IMPORTS;
+    }
+  };
+  await go();
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-9-modern-atamura-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  const report = JSON.parse(row.report);
+  assert.equal(report.grade, 9);
+  assert.equal(report.publisher, 'Атамұра');
+  assert.equal(report.imported.length, 32);
+  assert.equal(report.live, 32);
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 32);
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'now9a@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const period = (await pupil('GET', '/api/periods/kazirgi-zaman')).body;
+  const shown = period.topics.filter((t) => t.grade === 9 && t.publisher === 'Атамұра' && t.icon?.name === 'sv-factory');
+  assert.equal(shown.length, 32);
+  assert.ok(shown.every((t) => t.icon.size === 36));
+  const total = items.reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+  assert.equal(total, 740);
+  assert.equal(shown.reduce((n, p) => n + p.question_count, 0), total);
+  await go();
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 32);
+});
