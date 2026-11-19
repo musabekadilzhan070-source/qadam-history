@@ -118,6 +118,14 @@ export const PACKS = [
         ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'al-masa'],
       ]),
   },
+  {
+    key: 'history-11-atamura-topics-2026-11',
+    run: async () =>
+      importByPeriod(await import('./imports/history-11-atamura-topics.js'), 11, 'Атамұра', [
+        ['modern', 'zhana-zaman', 'Жаңа заман', 'd-shield'],
+        ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'up-torch'],
+      ]),
+  },
 ];
 
 /** One book over the four periods: the periods one after another (parallel packs collided on question ids). */
