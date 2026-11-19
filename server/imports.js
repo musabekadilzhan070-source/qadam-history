@@ -85,6 +85,20 @@ export const PACKS = [
     icon: { kind: 'emblem', name: 'w-eternal-flame', size: 36 },
     load: async () => (await import('./imports/history-9-modern-mektep.js')).default,
   },
+  // «10-сынып | Атамұра»: one test for each of the four periods, each with its own emblem (36 px).
+  ...[
+    ['ancient', 'ezhelgi-zaman', 'Ежелгі заман', 'a-pottery'],
+    ['middle', 'orta-gasyr', 'Орта ғасыр', 't-turgesh-coin'],
+    ['modern', 'zhana-zaman', 'Жаңа заман', 'd-signal-fire'],
+    ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'i-khan-shatyr'],
+  ].map(([part, slug, title, emblem]) => ({
+    key: `history-10-atamura-${part}-2026-11`,
+    period: { slug, title },
+    grade: 10,
+    publisher: 'Атамұра',
+    icon: { kind: 'emblem', name: emblem, size: 36 },
+    load: async () => (await import('./imports/history-10-atamura.js'))[part],
+  })),
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
