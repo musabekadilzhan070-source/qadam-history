@@ -15,6 +15,8 @@ let server;
 let base;
 before(async () => {
   server = app.listen(0);
+  // A long step between requests (an import) must not meet a keep-alive socket the server just closed (ECONNRESET).
+  server.keepAliveTimeout = 120_000;
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
