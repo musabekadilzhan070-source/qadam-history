@@ -75,6 +75,16 @@ export const PACKS = [
     icon: { kind: 'emblem', name: 'sv-factory', size: 36 },
     load: async () => (await import('./imports/history-9-modern-atamura.js')).default,
   },
+  {
+    // «Қазіргі заман», «9-сынып | Мектеп»: 46 тақырып (§1–2 … §60) with Мәңгілік алау (36 px).
+    // Compared only with topics already tagged «9-сынып | Мектеп».
+    key: 'history-9-modern-mektep-2026-11',
+    period: { slug: 'kazirgi-zaman', title: 'Қазіргі заман' },
+    grade: 9,
+    publisher: 'Мектеп',
+    icon: { kind: 'emblem', name: 'w-eternal-flame', size: 36 },
+    load: async () => (await import('./imports/history-9-modern-mektep.js')).default,
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
