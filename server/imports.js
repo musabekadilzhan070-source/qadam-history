@@ -105,25 +105,38 @@ export const PACKS = [
     // The corrected «10-сынып | Атамұра» set: its topics in the four periods, with the same four emblems.
     // One pack, the periods one after another (parallel packs on several cold starts collided on question ids).
     key: 'history-10-atamura-topics-2026-11',
-    run: async () => {
-      const data = await import('./imports/history-10-atamura-topics.js');
-      const reports = [];
-      for (const [part, slug, title, emblem] of TENTH_PERIODS) {
-        const pack = {
-          key: `history-10-atamura-topics-${part}`,
-          period: { slug, title },
-          grade: 10,
-          publisher: 'Атамұра',
-          samePeriod: true,
-          icon: { kind: 'emblem', name: emblem, size: 36 },
-          load: async () => data[part],
-        };
-        reports.push(await importPack(pack));
-      }
-      return reports;
-    },
+    run: async () => importByPeriod(await import('./imports/history-10-atamura-topics.js'), 10, 'Атамұра', TENTH_PERIODS),
+  },
+  {
+    // «10-сынып | Мектеп»: its topics in the four periods («Жалпы тақырып» first in Ежелгі заман), each period its emblem (36 px).
+    key: 'history-10-mektep-topics-2026-11',
+    run: async () =>
+      importByPeriod(await import('./imports/history-10-mektep-topics.js'), 10, 'Мектеп', [
+        ['ancient', 'ezhelgi-zaman', 'Ежелгі заман', 'a-hand-axe'],
+        ['middle', 'orta-gasyr', 'Орта ғасыр', 't-kultegin'],
+        ['modern', 'zhana-zaman', 'Жаңа заман', 'r-dombra'],
+        ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'al-masa'],
+      ]),
   },
 ];
+
+/** One book over the four periods: the periods one after another (parallel packs collided on question ids). */
+async function importByPeriod(data, grade, publisher, periods) {
+  const reports = [];
+  for (const [part, slug, title, emblem] of periods) {
+    const pack = {
+      key: `by-period-${grade}-${publisher}-${part}`,
+      period: { slug, title },
+      grade,
+      publisher,
+      samePeriod: true,
+      icon: { kind: 'emblem', name: emblem, size: 36 },
+      load: async () => data[part],
+    };
+    reports.push(await importPack(pack));
+  }
+  return reports;
+}
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
 const enabled = () => process.env.QADAM_IMPORTS === '1' || (process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production');
