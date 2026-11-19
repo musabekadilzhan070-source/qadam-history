@@ -50,6 +50,11 @@ export const PACKS = [
     publisher: 'Атамұра',
     load: async () => (await import('./imports/history-8-modern-atamura.js')).default,
   },
+  {
+    // Those «Қазіргі заман», «8-сынып | Атамұра» topics get «1822 жылғы Жарғы» (36 px).
+    key: 'icon-kazirgi-8-atamura-charter-2026-11',
+    run: () => iconPeriod({ slug: 'kazirgi-zaman', title: 'Қазіргі заман' }, 8, 'Атамұра', { kind: 'emblem', name: 'e-charter-1822', size: 36 }),
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
@@ -367,4 +372,18 @@ export async function tagPeriod(where, grade, publisher) {
     for (const x of snap.tests) if (testSet.has(x.id)) Object.assign(x, { grade, publisher });
   }, `${where.title}: барлық тест ${grade}-сынып | ${publisher}`);
   return { period: where.title, grade, publisher, topics: topicIds.length, tests: testIds.length, shelf_entries: entries.length };
+}
+
+/** Sets one emblem on every topic of a period with the given grade and publisher, on the draft and live at once. */
+export async function iconPeriod(where, grade, publisher, icon) {
+  const period = (await get('SELECT id FROM periods WHERE slug = ?', where.slug)) || (await get('SELECT id FROM periods WHERE title = ?', where.title));
+  if (!period) throw new Error(`Кезең табылмады: ${where.title}`);
+  const ids = (await all('SELECT id FROM topics WHERE period_id = ? AND deleted = 0 AND grade = ? AND publisher = ?', period.id, grade, publisher)).map((t) => t.id);
+  const value = JSON.stringify(icon);
+  if (ids.length) await run(`UPDATE topics SET icon = ? WHERE id IN (${ids.join(',')})`, value);
+  const set = new Set(ids);
+  await patchPublished((snap) => {
+    for (const t of snap.topics) if (set.has(t.id)) t.icon = icon;
+  }, `${where.title}, ${grade}-сынып | ${publisher}: белгіше ${icon.name}`);
+  return { period: where.title, grade, publisher, icon, topics: ids.length };
 }
