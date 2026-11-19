@@ -41,6 +41,15 @@ export const PACKS = [
     key: 'tag-orta-gasyr-6-atamura-2026-11',
     run: () => tagPeriod({ slug: 'orta-gasyr', title: 'Орта ғасыр' }, 6, 'Атамұра'),
   },
+  {
+    // «Қазіргі заман», «8-сынып | Атамұра»: 21 тақырып (§1–2 … §35–36). Compared only with topics
+    // already tagged «8-сынып | Атамұра», so the period's older topics with similar titles stay as they are.
+    key: 'history-8-modern-atamura-2026-11',
+    period: { slug: 'kazirgi-zaman', title: 'Қазіргі заман' },
+    grade: 8,
+    publisher: 'Атамұра',
+    load: async () => (await import('./imports/history-8-modern-atamura.js')).default,
+  },
 ];
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
