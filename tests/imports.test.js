@@ -522,3 +522,40 @@ test('«10-сынып | Атамұра» topics: each period gets its own topics
   await go();
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 20);
 });
+
+test('«10-сынып | Мектеп» topics: 51 topics in the four periods, each period its own emblem 36 px', async () => {
+  const data = await import('../server/imports/history-10-mektep-topics.js');
+  const parts = [
+    ['ancient', 'ezhelgi-zaman', 'a-hand-axe', 17],
+    ['middle', 'orta-gasyr', 't-kultegin', 11],
+    ['modern', 'zhana-zaman', 'r-dombra', 14],
+    ['recent', 'kazirgi-zaman', 'al-masa', 9],
+  ];
+  const before = (await get('SELECT COUNT(*) AS n FROM topics')).n;
+  const go = async () => {
+    process.env.QADAM_IMPORTS = '1';
+    try {
+      await runImportsOnce(['history-10-mektep-topics-2026-11']);
+    } finally {
+      delete process.env.QADAM_IMPORTS;
+    }
+  };
+  await go();
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'history-10-mektep-topics-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  for (const r of JSON.parse(row.report)) assert.deepEqual([r.publisher, r.skipped, r.moved], ['Мектеп', [], []], JSON.stringify(r));
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 51);
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'ten-m@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  for (const [part, slug, emblem, count] of parts) {
+    assert.equal(data[part].length, count);
+    const period = (await pupil('GET', `/api/periods/${slug}`)).body;
+    const shown = period.topics.filter((t) => t.grade === 10 && t.publisher === 'Мектеп');
+    assert.equal(shown.length, count, slug);
+    assert.ok(shown.every((t) => t.icon?.name === emblem && t.icon.size === 36));
+    const total = data[part].reduce((n, p) => n + rowsToQuestions(p.rows).questions.length, 0);
+    assert.equal(shown.reduce((n, t) => n + t.question_count, 0), total, slug);
+  }
+  await go();
+  assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, before + 51);
+});
