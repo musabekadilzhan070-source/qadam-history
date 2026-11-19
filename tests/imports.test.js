@@ -319,3 +319,27 @@ test('Қазіргі заман, «8-сынып | Атамұра»: all 21 topic
   await run();
   assert.equal((await get('SELECT COUNT(*) AS n FROM topics')).n, topicsBefore + 21);
 });
+
+test('Қазіргі заман, «8-сынып | Атамұра»: «1822 жылғы Жарғы» 36 px on every topic, live at once', async () => {
+  const org = client();
+  assert.equal((await org('POST', '/api/org/login', { pin: '908172' })).status, 200);
+  const { body: st } = await org('GET', '/api/org/state');
+  const recent = st.periods.find((p) => p.slug === 'kazirgi-zaman');
+  const other = await org('POST', '/api/org/topics', { period_id: recent.id, title: '9-сынып, басқа', grade: 9, publisher: 'Атамұра', published: true });
+  process.env.QADAM_IMPORTS = '1';
+  try {
+    await runImportsOnce(['icon-kazirgi-8-atamura-charter-2026-11']);
+  } finally {
+    delete process.env.QADAM_IMPORTS;
+  }
+  const row = await get("SELECT status, report FROM content_imports WHERE key = 'icon-kazirgi-8-atamura-charter-2026-11'");
+  assert.equal(row.status, 'done', row.report);
+  assert.equal(JSON.parse(row.report).topics, 21);
+  assert.ok(!(await get('SELECT icon FROM topics WHERE id = ?', other.body.id)).icon.includes('charter'));
+  const pupil = client();
+  assert.equal((await pupil('POST', '/api/auth/register', { display_name: 'Оқушы', email: 'charter@mail.kz', password: 'secret9', password_confirm: 'secret9' })).status, 201);
+  const period = (await pupil('GET', '/api/periods/kazirgi-zaman')).body;
+  const mine = period.topics.filter((t) => t.grade === 8 && t.publisher === 'Атамұра');
+  assert.equal(mine.length, 21);
+  assert.ok(mine.every((t) => t.icon?.name === 'e-charter-1822' && t.icon.size === 36 && t.icon.kind === 'emblem'));
+});
