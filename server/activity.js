@@ -2,6 +2,7 @@ import express from 'express';
 import { all, get, run, batch } from './db.js';
 import { dayOf, secondOfDay, utcRangeOf, isDay } from './almaty.js';
 import { attemptDetail, textbook } from './quiz.js';
+import { quizRunsBetween } from './quizgame.js';
 
 // Active time and the daily report («Кураторға есеп беру»). Everything here is the signed-in
 // student's own data: every query is filtered by req.user.id.
@@ -119,6 +120,8 @@ export async function dailyReport(user, day) {
   );
   const tests = byTest(attempts.filter((a) => a.kind !== 'rework'));
   const reworks = byTest(attempts.filter((a) => a.kind === 'rework'));
+  // Quizzes are reported on their own, never mixed with the classic test results.
+  const quizzes = await quizRunsBetween(user.id, from, to);
 
   const slots = await all(
     'SELECT kind, book_id, page, COUNT(*) AS n FROM activity_slots WHERE user_id = ? AND day = ? GROUP BY kind, book_id, page',
@@ -158,6 +161,7 @@ export async function dailyReport(user, day) {
     generated_at: new Date().toISOString(),
     tests,
     reworks,
+    quizzes,
     books,
     activity: {
       active_sec: seconds(() => true),
@@ -165,6 +169,7 @@ export async function dailyReport(user, day) {
       reading_sec: seconds((r) => r.kind === 'book'),
       tests_done: tests.reduce((s, t) => s + t.times, 0),
       reworks_done: reworks.reduce((s, t) => s + t.times, 0),
+      quizzes_done: quizzes.filter((q) => q.finished).length,
       books_opened: books.length,
       pages_read: books.reduce((s, b) => s + b.pages_read, 0),
     },

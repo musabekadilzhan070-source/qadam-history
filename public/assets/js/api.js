@@ -1,7 +1,8 @@
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data = {}) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -16,7 +17,7 @@ async function request(method, url, body) {
     throw new ApiError('Сервермен байланыс жоқ. Интернетті тексеріп, қайталаңыз.', 0);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error || 'Қате шықты.', res.status);
+  if (!res.ok) throw new ApiError(data.error || 'Қате шықты.', res.status, data);
   return data;
 }
 

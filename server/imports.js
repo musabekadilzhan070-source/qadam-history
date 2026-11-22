@@ -2,6 +2,7 @@ import { all, get, run, batch } from './db.js';
 import { rowsToQuestions, duplicateKey } from './transfer.js';
 import { parseTest, writeTest, uniqueSlug } from './org.js';
 import { publishTests, patchPublished } from './publish.js';
+import { copyClassicToQuizzes } from './quizgame.js';
 import { SUBJECT, TOPIC_PUBLISHERS } from './catalog.js';
 
 // One-time content imports shipped with the code. Each pack runs once per database (table
@@ -126,6 +127,11 @@ export const PACKS = [
         ['recent', 'kazirgi-zaman', 'Қазіргі заман', 'up-torch'],
       ]),
   },
+  {
+    // The second format: one quiz copy of every classic test on the site (after the imports above).
+    key: 'quiz-copies-2026-11',
+    run: () => copyClassicToQuizzes({ note: 'Барлық классикалық тесттің Quiz көшірмесі' }),
+  },
 ];
 
 /** One book over the four periods: the periods one after another (parallel packs collided on question ids). */
@@ -215,7 +221,8 @@ export async function importPack(pack, before = null) {
   const items = await pack.load();
 
   let topics = await all('SELECT id, period_id, title, grade, publisher FROM topics WHERE deleted = 0');
-  let tests = await all('SELECT id, topic_id, title FROM tests');
+  // Quiz copies share the questions of their tests: an import compares only with classic tests.
+  let tests = await all("SELECT id, topic_id, title FROM tests WHERE COALESCE(format, 'classic') <> 'quiz'");
   if (pack.publisher) {
     // A pack of one book compares itself only with that book's topics.
     topics = topics.filter((t) => t.grade === pack.grade && t.publisher === pack.publisher);

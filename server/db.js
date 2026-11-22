@@ -362,6 +362,53 @@ CREATE TABLE IF NOT EXISTS content_imports (
 );
 `;
 
+// Quiz: a second, game-like format of a test. A quiz is its own row in `tests` (format 'quiz'), with
+// its own questions, edited and published on its own; source_test_id is the classic test it was
+// copied from. A student's quiz progress is kept on the server, one run at a time per quiz.
+const SCHEMA_V5 = `
+-- Which classic test already has its quiz copy. Kept even when the copy is deleted, so copying
+-- again never makes a second copy of the same test.
+CREATE TABLE IF NOT EXISTS quiz_sources (
+  source_test_id INTEGER PRIMARY KEY,
+  quiz_test_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- A student's pass through a quiz. queue: the question ids still to answer, in order (a wrong
+-- answer moves its question to the end). log: every answer given. finished_at is set when the
+-- queue is empty, that is when every question was answered correctly. version guards against
+-- two answers to the same question at once (a double tap, two tabs).
+CREATE TABLE IF NOT EXISTS quiz_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  test_id INTEGER NOT NULL,
+  test_title TEXT NOT NULL DEFAULT '',
+  question_ids TEXT NOT NULL DEFAULT '[]',
+  queue TEXT NOT NULL DEFAULT '[]',
+  wrong_ids TEXT NOT NULL DEFAULT '[]',
+  log TEXT NOT NULL DEFAULT '[]',
+  total INTEGER NOT NULL DEFAULT 0,
+  first_correct INTEGER NOT NULL DEFAULT 0,
+  repeated INTEGER NOT NULL DEFAULT 0,
+  wrong_answers INTEGER NOT NULL DEFAULT 0,
+  answers INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,
+  duration_sec INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_user ON quiz_runs(user_id, test_id, id);
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_test ON quiz_runs(test_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_runs_open ON quiz_runs(user_id, test_id) WHERE finished_at IS NULL;
+-- Copies of the content tables taken before a large change (the first quiz copy). Not content.
+CREATE TABLE IF NOT EXISTS data_backups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  note TEXT NOT NULL DEFAULT '',
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`;
+
 const COLUMNS = [
   ['topics', 'published', 'INTEGER NOT NULL DEFAULT 1'],
   ['topics', 'image_id', 'INTEGER'],
@@ -411,6 +458,11 @@ const COLUMNS = [
   ['link_attempts', 'root_id', 'INTEGER'],
   // The organizer's order of the tests inside a book of a period (0 = not set: period order, after the set ones).
   ['period_book_tests', 'position', 'INTEGER NOT NULL DEFAULT 0'],
+  // 'classic' (the form-like test) or 'quiz' (the game, repeated until every answer is correct).
+  ['tests', 'format', "TEXT NOT NULL DEFAULT 'classic'"],
+  ['tests', 'source_test_id', 'INTEGER'],
+  // The question a quiz copy was made from (only while copying: maps contexts to their children).
+  ['questions', 'copied_from', 'INTEGER'],
 ];
 
 async function addMissingColumns() {
@@ -426,9 +478,12 @@ export async function migrate() {
   await db.executeMultiple(SCHEMA_V2);
   await db.executeMultiple(SCHEMA_V3);
   await db.executeMultiple(SCHEMA_V4);
+  await db.executeMultiple(SCHEMA_V5);
   const firstReworkRun = !(await all('PRAGMA table_info(link_attempts)')).some((c) => c.name === 'kind');
   await addMissingColumns();
   await db.execute('CREATE INDEX IF NOT EXISTS idx_link_attempts_root ON link_attempts(root_id)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_questions_copied ON questions(copied_from) WHERE copied_from IS NOT NULL');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_tests_source ON tests(source_test_id) WHERE source_test_id IS NOT NULL');
   // Links now show each question with the student's answer and the correct one by default
   // (like a self-graded form): applied once to the links made before; the organizer can turn it off.
   if (firstReworkRun) await db.execute('UPDATE test_links SET show_answers = 1 WHERE show_answers = 0');

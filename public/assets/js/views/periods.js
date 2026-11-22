@@ -4,6 +4,7 @@ import { icon } from '../art.js';
 import { periodCard, pageHead, testCard } from '../components.js';
 import { site, renderIcon } from '../site.js';
 import { topicClassLabel, gradeLabel } from '../catalog.js';
+import { quizCard } from './quizgame.js';
 
 export async function periodsView(el, _params, _app, alive) {
   const { periods, totals } = await api.get('/api/overview');
@@ -26,7 +27,41 @@ export const periodBookView = (el, [slug, entry], app, alive) => periodPage(el, 
 const coverUrl = (b) => `/api/files/${b.cover_id}?v=${b.cover_version}`;
 /** «8-сынып | Атамұра», or whichever half the book has. */
 const bookLabel = (b) => [gradeLabel(b.grade), b.publisher].filter(Boolean).join(' | ');
-const bookHref = (slug, b) => `/periods/${encodeURIComponent(slug)}/books/${b.id}`;
+// Two formats on a period: the classic tests and the quizzes (?view=quiz). The choice is kept in
+// the address and remembered for the next visit.
+const MODE_KEY = 'qadam_period_mode';
+let mode = 'classic';
+const modeQuery = () => (mode === 'quiz' ? '?view=quiz' : '');
+const bookHref = (slug, b) => `/periods/${encodeURIComponent(slug)}/books/${b.id}${modeQuery()}`;
+function startMode() {
+  const asked = new URLSearchParams(location.search).get('view');
+  if (asked === 'quiz' || asked === 'classic') return asked;
+  try {
+    return localStorage.getItem(MODE_KEY) === 'quiz' ? 'quiz' : 'classic';
+  } catch {
+    return 'classic';
+  }
+}
+function keepMode() {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* not kept */
+  }
+}
+
+/** The switch between the two formats, under the period's heading. */
+const modeSwitch = (period) => `
+  <div class="mode-switch" role="tablist" aria-label="Тест форматы">
+    <button type="button" role="tab" class="mode-tab mode-classic" data-mode="classic" aria-selected="${mode === 'classic'}">
+      <span class="mode-icon">${icon('tests')}</span>
+      <span class="mode-body"><b>Классикалық тест</b><small>Барлық сұрақ бір парақта, соңында нәтиже · ${period.test_count} тест</small></span>
+    </button>
+    <button type="button" role="tab" class="mode-tab mode-quiz" data-mode="quiz" aria-selected="${mode === 'quiz'}">
+      <span class="mode-icon">${icon('quiz')}</span>
+      <span class="mode-body"><b>Quiz</b><small>Ойын форматы: 100% дұрыс жауапқа дейін · ${period.quiz_count || 0} quiz</small></span>
+    </button>
+  </div>`;
 
 /** The book a student chose last on a period, so the next visit opens it. */
 const memoryKey = (slug) => `qadam_period_book_${slug}`;
@@ -66,6 +101,7 @@ async function periodPage(el, slug, entryId, app, alive) {
   const period = await api.get(`/api/periods/${encodeURIComponent(slug)}`);
   if (!alive()) return;
   app.setTitle(period.title);
+  mode = startMode();
   const books = period.books || [];
   el.innerHTML = `
     <ol class="breadcrumb"><li><a href="/periods" data-link>Тарихи кезеңдер</a></li><li aria-current="page">${esc(period.title)}</li></ol>
@@ -74,8 +110,9 @@ async function periodPage(el, slug, entryId, app, alive) {
       title: period.title,
       text: period.summary,
       number: period.number,
-      extra: `<ul class="head-stats"><li><b>${period.topic_count}</b>тақырып</li><li><b>${period.test_count}</b>тест</li><li><b>${period.question_count}</b>сұрақ</li></ul>`,
+      extra: `<ul class="head-stats"><li><b>${period.topic_count}</b>тақырып</li><li><b>${period.test_count}</b>тест</li>${period.quiz_count ? `<li><b>${period.quiz_count}</b>quiz</li>` : ''}<li><b>${period.question_count}</b>сұрақ</li></ul>`,
     })}
+    ${modeSwitch(period)}
     ${
       books.length
         ? `<div class="book-tabs">
@@ -85,9 +122,42 @@ async function periodPage(el, slug, entryId, app, alive) {
             </div>
           </div>
           <div data-book-pane></div>`
-        : topicList(period)
+        : '<div data-topic-pane></div>'
     }`;
-  if (!books.length) return;
+
+  let redraw = () => {};
+  // The page element stays between pages: listeners end with this page.
+  const listening = new AbortController();
+  const cleanup = () => listening.abort();
+  const markMode = () =>
+    el.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === mode)));
+  const syncAddress = () => {
+    const path = location.pathname;
+    history.replaceState(null, '', path + modeQuery());
+    el.querySelectorAll('.chip-book').forEach((c) => {
+      const b = books.find((x) => x.id === Number(c.dataset.entry));
+      if (b) c.setAttribute('href', bookHref(period.slug, b));
+    });
+  };
+  el.addEventListener('click', (e) => {
+    const tab = e.target.closest('[data-mode]');
+    if (!tab || tab.dataset.mode === mode) return;
+    mode = tab.dataset.mode;
+    keepMode();
+    markMode();
+    syncAddress();
+    redraw();
+  }, { signal: listening.signal });
+
+  if (!books.length) {
+    const topicPane = el.querySelector('[data-topic-pane]');
+    redraw = () => {
+      topicPane.innerHTML = mode === 'quiz' ? quizGrid(period.quizzes || []) : topicList(period);
+    };
+    redraw();
+    syncAddress();
+    return cleanup;
+  }
 
   const pane = el.querySelector('[data-book-pane]');
   const cache = new Map();
@@ -116,7 +186,7 @@ async function periodPage(el, slug, entryId, app, alive) {
     mark();
     remember(period.slug, id);
     const href = bookHref(period.slug, b);
-    if (location.pathname !== href) history[push ? 'pushState' : 'replaceState'](null, '', href);
+    if (location.pathname + location.search !== href) history[push ? 'pushState' : 'replaceState'](null, '', href);
     app.setTitle(`${bookLabel(b) || b.title} · ${period.title}`);
     if (!cache.has(id)) pane.innerHTML = '<div class="panel empty"><p>Жүктелуде…</p></div>';
     let page;
@@ -127,16 +197,26 @@ async function periodPage(el, slug, entryId, app, alive) {
       return;
     }
     if (shown !== id || !alive()) return;
+    shownPage = page;
     pane.innerHTML = bookPane(period, page);
     wireCovers(pane);
   }
 
   function chooser() {
     shown = 0;
+    shownPage = null;
     mark();
     pane.innerHTML = shelfChooser(period);
     wireCovers(pane);
   }
+
+  let shownPage = null;
+  redraw = () => {
+    if (shown && shownPage) {
+      pane.innerHTML = bookPane(period, shownPage);
+      wireCovers(pane);
+    } else if (!shown) chooser();
+  };
 
   el.addEventListener('click', (e) => {
     const a = e.target.closest('[data-entry]');
@@ -144,23 +224,25 @@ async function periodPage(el, slug, entryId, app, alive) {
     e.preventDefault();
     const id = Number(a.dataset.entry);
     if (id !== shown) choose(id, { push: true });
-  });
+  }, { signal: listening.signal });
 
   // Which book first: the one in the link, the only one, or the one chosen last time; otherwise
   // the student is asked to choose (the covers below the buttons).
   const valid = (id) => books.some((b) => b.id === id);
   const first = valid(entryId) ? entryId : books.length === 1 ? books[0].id : valid(remembered(period.slug)) ? remembered(period.slug) : 0;
+  syncAddress();
   if (first) await choose(first);
   else chooser();
   // The other books load in the background, so switching is instant.
   for (const b of books) if (b.id !== shown) load(b.id).catch(() => {});
+  return cleanup;
 }
 
 /** The books on this period as covers: shown until the student picks one. */
 function shelfChooser(period) {
   return `
     <section class="shelf" aria-label="Кітаптар">
-      <p class="shelf-text">Осы кезеңнің тесттері оқулық бойынша топталған. Өз оқулығыңызды таңдаңыз.</p>
+      <p class="shelf-text">Осы кезеңнің ${mode === 'quiz' ? 'Quiz тесттері' : 'тесттері'} оқулық бойынша топталған. Өз оқулығыңызды таңдаңыз.</p>
       <ul class="shelf-grid">
         ${period.books
           .map(
@@ -171,7 +253,11 @@ function shelfChooser(period) {
               <span class="shelf-info">
                 ${bookLabel(b) ? `<b class="shelf-label">${esc(bookLabel(b))}</b>` : ''}
                 <span class="shelf-name">${esc(b.title)}</span>
-                <span class="shelf-count">${icon('tests')}${b.test_count} тест${b.tests_done ? ` · ${b.tests_done} орындалды` : ''}</span>
+                ${
+                  mode === 'quiz'
+                    ? `<span class="shelf-count">${icon('quiz')}${b.quiz_count || 0} quiz${b.quizzes_done ? ` · ${b.quizzes_done} аяқталды` : ''}</span>`
+                    : `<span class="shelf-count">${icon('tests')}${b.test_count} тест${b.tests_done ? ` · ${b.tests_done} орындалды` : ''}</span>`
+                }
               </span>
             </a>
           </li>`,
@@ -182,7 +268,7 @@ function shelfChooser(period) {
 }
 
 /** The chosen book: a compact cover header with «Кітапты оқу», then all its tests. */
-function bookPane(period, { book, tests }) {
+function bookPane(period, { book, tests, quizzes = [] }) {
   const readHref = `/books/${book.book_id}?from=${encodeURIComponent(bookHref(period.slug, book))}`;
   return `
     <header class="panel book-head">
@@ -192,14 +278,25 @@ function bookPane(period, { book, tests }) {
         <ul class="book-head-tags">
           ${book.grade ? `<li>${esc(gradeLabel(book.grade))}</li>` : ''}
           ${book.publisher ? `<li>${esc(book.publisher)}</li>` : ''}
-          <li>${tests.length} тест</li>
+          <li>${mode === 'quiz' ? `${quizzes.length} quiz` : `${tests.length} тест`}</li>
         </ul>
         <div class="book-head-actions">
           <a class="btn btn-sm btn-dark" href="${readHref}" data-link>${icon('book')}Кітапты оқу</a>
         </div>
       </div>
     </header>
-    ${tests.length ? `<div class="card-grid">${tests.map(testCard).join('')}</div>` : '<div class="panel empty"><p>Бұл кітапта әзірге тест жоқ.</p></div>'}`;
+    ${
+      mode === 'quiz'
+        ? quizGrid(quizzes, 'Бұл кітапта әзірге Quiz жоқ.')
+        : tests.length
+          ? `<div class="card-grid">${tests.map(testCard).join('')}</div>`
+          : '<div class="panel empty"><p>Бұл кітапта әзірге классикалық тест жоқ.</p></div>'
+    }`;
+}
+
+/** The quizzes of a book or of a period, as game cards. */
+function quizGrid(quizzes, empty = 'Бұл кезеңде әзірге Quiz жоқ.') {
+  return quizzes.length ? `<div class="qg-grid">${quizzes.map(quizCard).join('')}</div>` : `<div class="panel empty"><p>${empty}</p></div>`;
 }
 
 function topicList(period) {

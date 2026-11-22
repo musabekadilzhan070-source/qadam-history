@@ -3,6 +3,7 @@ import { LIVE_BOOK } from './books.js';
 import { published } from './publish.js';
 import { gradable, settingsOf } from './questions.js';
 import { defaultTopicEmblem } from './emblem-defaults.js';
+import { liveQuizzes, quizCard, quizProgress } from './quizgame.js';
 
 // Everything here reads the published snapshot, so drafts never reach students.
 
@@ -65,6 +66,7 @@ function periodStats(snap, period, best, userId) {
     test_count: tests.length,
     question_count: tests.reduce((s, x) => s + servedCount(x), 0),
     tests_done: userId ? tests.filter((x) => best.has(x.id)).length : null,
+    quiz_count: liveQuizzes(snap).filter((x) => ids.has(x.topic_id)).length,
   };
 }
 
@@ -83,6 +85,7 @@ const topicSummary = (snap, t, best) => {
     question_count: tests.reduce((s, x) => s + servedCount(x), 0),
     test_count: tests.length,
     first_test_id: tests[0]?.id ?? null,
+    first_quiz_id: liveQuizzes(snap).find((x) => x.topic_id === t.id)?.id ?? null,
     ...topicProgress(tests, best),
   };
 };
@@ -104,14 +107,21 @@ export async function getPeriod(slug, userId) {
   const period = snap.periods.find((p) => p.slug === slug);
   if (!period) return null;
   const best = await bestByTest(userId);
+  const progress = await quizProgress(userId);
+  const topics = snap.topics.filter((t) => t.period_id === period.id);
+  const periodOf = { slug: period.slug, title: period.title, number: period.number };
   return {
     ...periodStats(snap, period, best, userId),
-    topics: snap.topics.filter((t) => t.period_id === period.id).map((t) => topicSummary(snap, t, best)),
-    books: (await periodShelf(snap, period)).map(({ tests, ...b }) => ({
+    topics: topics.map((t) => topicSummary(snap, t, best)),
+    books: (await periodShelf(snap, period)).map(({ tests, quizzes, ...b }) => ({
       ...b,
       test_count: tests.length,
       tests_done: userId ? tests.filter((x) => best.has(x.id)).length : null,
+      quiz_count: quizzes.length,
+      quizzes_done: quizzes.filter((x) => progress.get(x.id)?.finished).length,
     })),
+    // The period's quizzes in its order, for a period without books.
+    quizzes: topics.flatMap((t) => liveQuizzes(snap).filter((x) => x.topic_id === t.id).map((x) => quizCard(x, progress, t, periodOf))),
   };
 }
 
@@ -144,16 +154,19 @@ async function periodShelf(snap, period) {
   // In the period's own order (topics, then tests), only what students may see.
   const topicIds = new Set(snap.topics.filter((t) => t.period_id === period.id).map((t) => t.id));
   const tests = snap.tests.filter((x) => topicIds.has(x.topic_id));
+  const quizzes = liveQuizzes(snap).filter((x) => topicIds.has(x.topic_id));
   return rows
     .map((r) => {
       // The organizer's order in the book first; tests without a place follow in period order.
       const pos = new Map(links.filter((l) => l.entry_id === r.entry_id).map((l) => [l.test_id, l.position || Infinity]));
-      const mine = tests.filter((x) => pos.has(x.id));
-      const at = new Map(mine.map((x, i) => [x.id, i]));
-      mine.sort((a, b) => pos.get(a.id) - pos.get(b.id) || at.get(a.id) - at.get(b.id));
-      return { ...bookView(r), tests: mine };
+      const inBook = (list) => {
+        const mine = list.filter((x) => pos.has(x.id));
+        const at = new Map(mine.map((x, i) => [x.id, i]));
+        return mine.sort((a, b) => pos.get(a.id) - pos.get(b.id) || at.get(a.id) - at.get(b.id));
+      };
+      return { ...bookView(r), tests: inBook(tests), quizzes: inBook(quizzes) };
     })
-    .filter((b) => b.tests.length);
+    .filter((b) => b.tests.length || b.quizzes.length);
 }
 
 /** A period's book and its tests (the page a student opens after choosing the book). */
@@ -165,11 +178,14 @@ export async function getPeriodBook(slug, entryId, userId) {
   const book = shelf.find((b) => b.id === entryId);
   if (!book) return null;
   const best = await bestByTest(userId);
+  const progress = await quizProgress(userId);
   const topicOf = new Map(snap.topics.map((t) => [t.id, t]));
+  const periodOf = { slug: period.slug, title: period.title, number: period.number };
   return {
     period: { ...periodStats(snap, period, best, userId) },
-    book: { ...book, tests: undefined },
-    other_books: shelf.filter((b) => b.id !== entryId).map(({ tests, ...b }) => ({ ...b, test_count: tests.length })),
+    book: { ...book, tests: undefined, quizzes: undefined },
+    other_books: shelf.filter((b) => b.id !== entryId).map(({ tests, quizzes, ...b }) => ({ ...b, test_count: tests.length, quiz_count: quizzes.length })),
+    quizzes: book.quizzes.map((x) => quizCard(x, progress, topicOf.get(x.topic_id), periodOf)),
     tests: book.tests.map((x) => {
       const t = topicOf.get(x.topic_id);
       return {

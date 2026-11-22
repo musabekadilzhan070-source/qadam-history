@@ -34,11 +34,11 @@ const GRACE_SEC = 90;
 /** An unfinished attempt without a time limit can be resumed for this long. */
 const RESUME_MS = 12 * 3600 * 1000;
 
-/** Gives every test that has none its link row (a new test gets its link at once). */
+/** Gives every classic test that has none its link row (quizzes are never sent as links) (a new test gets its link at once). */
 export async function ensureLinks() {
   await run(
     `INSERT OR IGNORE INTO test_links (test_id, share_id)
-     SELECT id, lower(hex(randomblob(8))) FROM tests WHERE id NOT IN (SELECT test_id FROM test_links)`,
+     SELECT id, lower(hex(randomblob(8))) FROM tests WHERE COALESCE(format, 'classic') <> 'quiz' AND id NOT IN (SELECT test_id FROM test_links)`,
   );
 }
 
@@ -102,7 +102,7 @@ async function currentVersion(testId) {
 }
 
 const linkBySlug = (slug) =>
-  /^[0-9a-f]{16}$/.test(String(slug)) ? get('SELECT l.*, x.title FROM test_links l JOIN tests x ON x.id = l.test_id WHERE l.share_id = ?', String(slug)) : null;
+  /^[0-9a-f]{16}$/.test(String(slug)) ? get("SELECT l.*, x.title FROM test_links l JOIN tests x ON x.id = l.test_id AND x.format IS NOT 'quiz' WHERE l.share_id = ?", String(slug)) : null;
 
 function participantOf(req, res) {
   let id = parseCookies(req.headers.cookie)[PARTICIPANT];
@@ -409,7 +409,7 @@ orgLinksRouter.get(
       `SELECT l.*, x.title, x.topic_id,
               (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.kind = 'test' AND a.finished_at IS NOT NULL) AS finished,
               (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.kind = 'test' AND a.finished_at IS NULL) AS unfinished
-       FROM test_links l JOIN tests x ON x.id = l.test_id ORDER BY x.topic_id, x.position, x.id`,
+       FROM test_links l JOIN tests x ON x.id = l.test_id AND COALESCE(x.format, 'classic') <> 'quiz' ORDER BY x.topic_id, x.position, x.id`,
     );
     res.json({ links: rows.map((l) => ({ ...linkView(l), title: l.title, finished: l.finished, unfinished: l.unfinished })) });
   }),

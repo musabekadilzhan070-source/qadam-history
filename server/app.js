@@ -27,6 +27,7 @@ import { publicLinksRouter } from './links.js';
 import { seedIfEmpty } from './seed.js';
 import { linkExistingBooksOnce } from './shelves.js';
 import { runImportsOnce } from './imports.js';
+import { quizRouter, userQuizResults } from './quizgame.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -180,10 +181,17 @@ app.use('/api/feedback', requireUser, feedbackRouter);
 app.use('/api/books', requireUser, booksRouter);
 app.use('/api/activity', requireUser, activityRouter);
 app.use('/api/report', requireUser, reportRouter);
+// Quiz: the game format, with the progress kept on the server (quizgame.js).
+app.use('/api/quizzes', requireUser, quizRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
 app.get('/api/results', requireUser, wrap(async (req, res) => {
   res.json(await userResults(req.user.id));
+}));
+
+// Quiz results are kept apart from the classic test results.
+app.get('/api/quiz-results', requireUser, wrap(async (req, res) => {
+  res.json(await userQuizResults(req.user.id));
 }));
 
 app.get('/api/results/:id', requireUser, wrap(async (req, res) => {

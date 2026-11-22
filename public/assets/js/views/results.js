@@ -3,9 +3,10 @@ import { esc, pad2, scoreBadge, formatDate, formatDuration } from '../util.js';
 import { icon } from '../art.js';
 import { pageHead } from '../components.js';
 import { resultHero, reviewList } from './review.js';
+import { quizTitle } from './quizgame.js';
 
 export async function resultsView(el, _params, app, alive) {
-  const { summary, attempts } = await api.get('/api/results');
+  const [{ summary, attempts }, quiz] = await Promise.all([api.get('/api/results'), api.get('/api/quiz-results')]);
   if (!alive()) return;
   el.innerHTML = `
     ${pageHead({
@@ -43,7 +44,47 @@ export async function resultsView(el, _params, app, alive) {
             </table>
           </div>`
         : `<div class="panel empty"><p>Әзірге бірде-бір тест тапсырылмаған.</p><a class="btn" href="/tests" data-link>Тесттерге өту</a></div>`
-    }`;
+    }
+    ${quizResults(quiz)}`;
+}
+
+/** Quiz results: kept apart from the classic tests (a quiz always ends at 100%). */
+function quizResults({ summary, runs }) {
+  return `
+    <section class="quiz-results" aria-labelledby="qr-title">
+      <h2 id="qr-title" class="section-title">${icon('quiz')} Quiz нәтижелері</h2>
+      <div class="summary-grid">
+        <div class="panel"><b>${summary.finished}</b><span>Аяқталған Quiz</span></div>
+        <div class="panel"><b>${summary.in_progress}</b><span>Жалғасып жатқан</span></div>
+        <div class="panel"><b>${summary.first_correct}/${summary.questions}</b><span>Бірден дұрыс</span></div>
+        <div class="panel"><b>${summary.wrong_answers}</b><span>Қате жауап</span></div>
+      </div>
+      ${
+        runs.length
+          ? `<div class="panel" style="overflow:hidden">
+              <table class="results-table">
+                <thead><tr><th>Quiz</th><th>Басталды</th><th>Аяқталды</th><th>Бірден дұрыс</th><th>Қайталанды</th><th>Қате</th><th>Уақыт</th><th>Нәтиже</th></tr></thead>
+                <tbody>
+                  ${runs
+                    .map(
+                      (r) => `<tr>
+                        <td><a href="/quiz/${r.test_id}" data-link>${esc(quizTitle(r.title))}</a><span class="sub">${r.total} сұрақ</span></td>
+                        <td data-label="Басталды">${esc(formatDate(r.started_at))}</td>
+                        <td data-label="Аяқталды">${r.finished ? esc(formatDate(r.finished_at)) : '<span class="kind-tag">Жалғасуда</span>'}</td>
+                        <td data-label="Бірден дұрыс" class="num">${r.first_correct}/${r.total}</td>
+                        <td data-label="Қайталанды" class="num">${r.repeated}</td>
+                        <td data-label="Қате" class="num">${r.wrong_answers}</td>
+                        <td data-label="Уақыт" class="num">${formatDuration(r.duration_sec)}</td>
+                        <td>${r.finished ? scoreBadge(100) : `<span class="num">${r.done}/${r.total}</span> <a class="link-more" href="/quiz/${r.test_id}" data-link>Жалғастыру ${icon('arrow')}</a>`}</td>
+                      </tr>`,
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>`
+          : '<div class="panel empty"><p>Әзірге Quiz ойнамадыңыз. Кезең бетінде «Quiz» форматын таңдаңыз.</p><a class="btn" href="/periods" data-link>Кезеңдерге өту</a></div>'
+      }
+    </section>`;
 }
 
 export async function attemptView(el, [id], app, alive) {
