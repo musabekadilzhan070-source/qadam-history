@@ -8,6 +8,7 @@ import { homeView } from './views/home.js';
 import { periodsView, periodView, periodBookView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
+import { quizGameView } from './views/quizgame.js';
 import { resultsView, attemptView } from './views/results.js';
 import { reworkView } from './views/rework.js';
 import { booksView } from './views/books.js';
@@ -35,6 +36,8 @@ const ROUTES = [
   { re: /^\/periods\/([\w-]+)\/books\/(\d+)\/?$/, nav: 'periods', view: periodBookView },
   { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
+  // Quiz: the game format (its own page, its own progress kept on the server).
+  { re: /^\/quiz\/(\d+)\/?$/, nav: 'periods', view: quizGameView, title: 'Quiz' },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/books\/(\d+)\/?$/, nav: 'books', view: readerView, title: 'Кітап', reader: true },
@@ -154,7 +157,7 @@ async function render() {
   }
   if (route.title !== undefined) app.setTitle(route.title);
   // Test pages count as test time; the reader sets its own book and page.
-  activity.set({ kind: /^\/(tests\/\d+|results\/\d+\/rework)\/?$/.test(path) ? 'test' : 'site' });
+  activity.set({ kind: /^\/(tests\/\d+|quiz\/\d+|results\/\d+\/rework)\/?$/.test(path) ? 'test' : 'site' });
   view.innerHTML = loading();
   try {
     const params = path.match(route.re).slice(1).map(decodeURIComponent);

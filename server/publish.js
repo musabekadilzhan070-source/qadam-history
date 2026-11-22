@@ -21,7 +21,7 @@ export async function readSetting(key, fallback) {
   return row ? parseJson(row.value, fallback) : fallback;
 }
 
-async function dumpDraft() {
+export async function dumpDraft() {
   const dump = {};
   for (const table of CONTENT_TABLES) dump[table] = await all(`SELECT * FROM ${table}`);
   return dump;
@@ -61,7 +61,7 @@ function snapshotFrom(dump) {
   const topicById = new Map(topics.map((t) => [t.id, t]));
   const topicIds = new Set(topics.map((t) => t.id));
   const testOfQuestion = new Map(dump.questions.map((q) => [q.id, q.test_id]));
-  const tests = dump.tests
+  const built = dump.tests
     .filter((x) => x.published && topicIds.has(x.topic_id))
     .sort(byPos)
     .map((x) => ({
@@ -86,8 +86,13 @@ function snapshotFrom(dump) {
           dump.options.filter((o) => testOfQuestion.get(o.question_id) === x.id),
         ),
       ),
+      ...(x.format === 'quiz' ? { format: 'quiz', source_test_id: x.source_test_id ?? null } : {}),
     }))
     .filter((x) => x.questions.length > 0);
+  // Classic tests and quizzes are kept apart: everything that lists `tests` (pages, search,
+  // counts, links, reports) stays the classic tests only; quizzes have their own list.
+  const tests = built.filter((x) => x.format !== 'quiz');
+  const quizzes = built.filter((x) => x.format === 'quiz');
   const materials = dump.materials
     .filter((m) => m.published && (m.topic_id === null || topicIds.has(m.topic_id)))
     .sort(byPos)
@@ -105,7 +110,18 @@ function snapshotFrom(dump) {
       facts: parseJson(p.facts, []),
       image_id: p.image_id,
     }));
-  return { texts: settings.texts || {}, icons: settings.icons || {}, periods, topics, tests, materials, persons };
+  // Only when there are quizzes, so versions made before keep the same hash.
+  return { texts: settings.texts || {}, icons: settings.icons || {}, periods, topics, tests, ...(quizzes.length ? { quizzes } : {}), materials, persons };
+}
+
+/** Which list of the snapshot a test lives in: 'quizzes' for a quiz, 'tests' for a classic test. */
+const listOf = (dump, testId) => (dump.tests.find((x) => x.id === testId)?.format === 'quiz' ? 'quizzes' : 'tests');
+const listIn = (snap, key) => snap[key] || [];
+/** A snapshot with one of its two lists replaced (an empty quiz list is left out, as above). */
+function withList(snap, key, list) {
+  const out = { ...snap, [key]: list };
+  if (key === 'quizzes' && !list.length) delete out.quizzes;
+  return out;
 }
 
 const hashOf = (value) => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -137,10 +153,11 @@ export async function publishTest(testId, live, note) {
   const dump = await dumpDraft();
   const current = await published();
   const fresh = snapshotFrom(dump);
-  const tests = current.tests.filter((x) => x.id !== testId);
+  const key = listOf(dump, testId);
+  const tests = listIn(current, key).filter((x) => x.id !== testId);
   let topics = current.topics;
   if (live) {
-    const test = fresh.tests.find((x) => x.id === testId);
+    const test = listIn(fresh, key).find((x) => x.id === testId);
     if (!test) {
       const row = dump.tests.find((x) => x.id === testId);
       return current.topics.some((t) => t.id === row?.topic_id) || fresh.topics.some((t) => t.id === row?.topic_id)
@@ -149,11 +166,11 @@ export async function publishTest(testId, live, note) {
     }
     // The topic may be new in the draft: bring it (and only it) along.
     if (!topics.some((t) => t.id === test.topic_id)) topics = [...topics, fresh.topics.find((t) => t.id === test.topic_id)];
-    const order = new Map(fresh.tests.map((x, i) => [x.id, i]));
+    const order = new Map(listIn(fresh, key).map((x, i) => [x.id, i]));
     tests.push(test);
     tests.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
   }
-  const snapshot = { ...current, topics, tests };
+  const snapshot = withList({ ...current, topics }, key, tests);
   await run(
     'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
     String(note).slice(0, 200),
@@ -174,17 +191,49 @@ export async function publishTests(testIds, topicIds, note) {
   const current = await published();
   const fresh = snapshotFrom(dump);
   const want = new Set(testIds);
-  const ready = fresh.tests.filter((x) => want.has(x.id));
+  const ready = [...fresh.tests, ...listIn(fresh, 'quizzes')].filter((x) => want.has(x.id));
   const refresh = new Set([...topicIds, ...ready.map((x) => x.topic_id)]);
   const freshIds = new Set(fresh.topics.map((t) => t.id));
   const topics = current.topics.filter((t) => !(refresh.has(t.id) && freshIds.has(t.id)));
   for (const t of fresh.topics) if (refresh.has(t.id)) topics.push(t);
   const topicOrder = new Map(fresh.topics.map((t, i) => [t.id, i]));
   topics.sort((a, b) => (topicOrder.get(a.id) ?? 1e9) - (topicOrder.get(b.id) ?? 1e9));
-  const tests = [...current.tests.filter((x) => !want.has(x.id)), ...ready];
-  const order = new Map(fresh.tests.map((x, i) => [x.id, i]));
-  tests.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
-  const snapshot = { ...current, topics, tests };
+  let snapshot = { ...current, topics };
+  for (const key of ['tests', 'quizzes']) {
+    const mine = ready.filter((x) => (x.format === 'quiz') === (key === 'quizzes'));
+    if (!mine.length) continue;
+    const list = [...listIn(current, key).filter((x) => !want.has(x.id)), ...mine];
+    const order = new Map(listIn(fresh, key).map((x, i) => [x.id, i]));
+    list.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+    snapshot = withList(snapshot, key, list);
+  }
+  await run(
+    'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
+    String(note).slice(0, 200),
+    hashOf(snapshot),
+    JSON.stringify({ snapshot, draft: dump }),
+  );
+  cache = null;
+  return ready.map((x) => x.id);
+}
+
+/**
+ * Puts quizzes live (the copies of live classic tests) without touching anything else that
+ * students see: the topics stay as they are published now, so a quiz whose topic is not live
+ * waits for its topic. Returns the ids that went live.
+ */
+export async function publishQuizzes(ids, note) {
+  const dump = await dumpDraft();
+  const current = await published();
+  const fresh = snapshotFrom(dump);
+  const want = new Set(ids);
+  const liveTopics = new Set(current.topics.map((t) => t.id));
+  const ready = listIn(fresh, 'quizzes').filter((x) => want.has(x.id) && liveTopics.has(x.topic_id));
+  if (!ready.length) return [];
+  const list = [...listIn(current, 'quizzes').filter((x) => !want.has(x.id)), ...ready];
+  const order = new Map(listIn(fresh, 'quizzes').map((x, i) => [x.id, i]));
+  list.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+  const snapshot = withList(current, 'quizzes', list);
   await run(
     'INSERT INTO publications (note, hash, data) VALUES (?, ?, ?)',
     String(note).slice(0, 200),
@@ -213,9 +262,11 @@ export async function patchPublished(fn, note) {
 
 /** 'hidden', 'live' or 'changed' (live, with saved edits students do not see yet). */
 export async function testLiveState(testId) {
-  const live = (await published()).tests.find((x) => x.id === testId);
+  const snap = await published();
+  const live = [...snap.tests, ...listIn(snap, 'quizzes')].find((x) => x.id === testId);
   if (!live) return 'hidden';
-  const draft = snapshotFrom(await dumpDraft()).tests.find((x) => x.id === testId);
+  const fresh = snapshotFrom(await dumpDraft());
+  const draft = [...fresh.tests, ...listIn(fresh, 'quizzes')].find((x) => x.id === testId);
   return draft && hashOf(draft) === hashOf(live) ? 'live' : 'changed';
 }
 

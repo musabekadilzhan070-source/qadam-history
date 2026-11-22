@@ -55,10 +55,19 @@ const id = (v) => {
 /** Every period's books with the ids of their tests, in the organizer's order. */
 export async function shelfState() {
   const entries = await all('SELECT id, period_id, book_id, position FROM period_books ORDER BY period_id, position, id');
-  const links = await all('SELECT entry_id, test_id, position FROM period_book_tests ORDER BY test_id');
+  const links = await all(
+    `SELECT l.entry_id, l.test_id, l.position, COALESCE(x.format, 'classic') AS format
+     FROM period_book_tests l LEFT JOIN tests x ON x.id = l.test_id ORDER BY l.test_id`,
+  );
+  // Classic tests (test_ids) and quizzes (quiz_ids) of a book are chosen and ordered apart.
   return entries.map((e) => {
     const mine = links.filter((l) => l.entry_id === e.id);
-    return { ...e, test_ids: mine.map((l) => l.test_id), positions: Object.fromEntries(mine.filter((l) => l.position > 0).map((l) => [l.test_id, l.position])) };
+    return {
+      ...e,
+      test_ids: mine.filter((l) => l.format !== 'quiz').map((l) => l.test_id),
+      quiz_ids: mine.filter((l) => l.format === 'quiz').map((l) => l.test_id),
+      positions: Object.fromEntries(mine.filter((l) => l.position > 0).map((l) => [l.test_id, l.position])),
+    };
   });
 }
 
@@ -147,12 +156,15 @@ orgShelvesRouter.put(
       }
       statements.push(['UPDATE period_books SET book_id = ? WHERE id = ?', bookId, entry.id]);
     }
-    if (req.body?.test_ids !== undefined) {
+    // test_ids: the classic tests of the book; quiz_ids: its quizzes. Each list changes only its own kind.
+    for (const field of ['test_ids', 'quiz_ids']) {
+      if (req.body?.[field] === undefined) continue;
       // Tests that stay keep their place in the book; new ones go after the others.
-      const tests = await cleanTests(entry.period_id, req.body.test_ids);
+      const tests = await cleanTests(entry.period_id, req.body[field]);
       const keep = new Set(tests);
-      for (const t of entry.test_ids) if (!keep.has(t)) statements.push(['DELETE FROM period_book_tests WHERE entry_id = ? AND test_id = ?', entry.id, t]);
-      for (const t of tests) if (!entry.test_ids.includes(t)) statements.push(['INSERT INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', entry.id, t]);
+      const had = entry[field];
+      for (const t of had) if (!keep.has(t)) statements.push(['DELETE FROM period_book_tests WHERE entry_id = ? AND test_id = ?', entry.id, t]);
+      for (const t of tests) if (!had.includes(t)) statements.push(['INSERT OR IGNORE INTO period_book_tests (entry_id, test_id) VALUES (?, ?)', entry.id, t]);
     }
     if (statements.length) await batch(statements);
     res.json(await entryById(entry.id));
@@ -179,8 +191,10 @@ orgShelvesRouter.post(
   wrap(async (req, res) => {
     const entry = await entryById(id(req.params.id));
     if (!entry) failWith(404, 'Кезең кітабы табылмады.');
-    const ids = Array.isArray(req.body?.test_ids) ? req.body.test_ids.map(id) : [];
-    const same = ids.length === entry.test_ids.length && new Set(ids).size === ids.length && ids.every((t) => entry.test_ids.includes(t));
+    const field = Array.isArray(req.body?.quiz_ids) ? 'quiz_ids' : 'test_ids';
+    const ids = Array.isArray(req.body?.[field]) ? req.body[field].map(id) : [];
+    const have = entry[field];
+    const same = ids.length === have.length && new Set(ids).size === ids.length && ids.every((t) => have.includes(t));
     if (!same) failWith(400, 'Реттеу тізімі қате: бетті жаңартып, қайталаңыз.');
     await batch(ids.map((t, i) => ['UPDATE period_book_tests SET position = ? WHERE entry_id = ? AND test_id = ?', i + 1, entry.id, t]));
     res.json(await entryById(entry.id));

@@ -532,6 +532,18 @@ function dayLayout(g, r) {
     h += 10 + g.text(`${t.times} рет · ${fixed}/${total} қате түзетілді`, PAD + 36, top + h + 10, { weight: 700, size: 20, color: C.text2, width: INNER - 70 });
     return h + 4;
   });
+  // Quizzes on their own: a finished quiz is always 100%; how it went is in the figures.
+  list('Quiz (ойын форматы)', r.quizzes || [], 'Бүгін Quiz ойналмады.', (q, top) => {
+    const pct = q.finished ? 100 : q.percent;
+    const p = g.pill(q.finished ? '100%' : `${q.done}/${q.total}`, PAD + INNER - 28, top - 2, scoreColors(pct), { right: true });
+    let h = g.text(String(q.title || '').replace(/\s*\(QUIZ\)\s*$/i, ''), PAD + 36, top, { weight: 800, size: 25, width: INNER - 80 - p.w });
+    h += 10 + g.text(
+      q.finished ? `Аяқталды · ${q.total} сұрақ · бірден дұрыс ${q.first_correct}` : `Жалғасуда · ${q.done} / ${q.total} сұрақ дұрыс`,
+      PAD + 36, top + h + 10, { weight: 700, size: 20, color: C.text2, width: INNER - 70 },
+    );
+    h += 4 + g.text(`Қайталанған сұрақ ${q.repeated} · қате жауап ${q.wrong_answers} · уақыт ${minutes(q.duration_sec)}`, PAD + 36, top + h + 4, { weight: 600, size: 18, color: C.muted, width: INNER - 70 });
+    return h + 4;
+  });
   list('Оқылған кітаптар', r.books, 'Бүгін кітап ашылмады.', (b, top) => {
     let h = g.text(b.title, PAD + 36, top, { weight: 800, size: 25, width: INNER - 70 });
     const meta = [b.subject, gradeLabel(b.grade), b.publisher].filter(Boolean).join(' | ');

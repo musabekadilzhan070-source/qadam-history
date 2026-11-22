@@ -16,6 +16,7 @@ import { gradeOf, publisherOf, textbookOf, TOPIC_GRADES, TOPIC_PUBLISHERS } from
 import { latin } from './latin.js';
 import { orgLinksRouter, ensureLinks } from './links.js';
 import { orgShelvesRouter } from './shelves.js';
+import { orgQuizRouter } from './quizgame.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -204,7 +205,8 @@ async function fileUsage() {
 async function draftTests() {
   const tests = await all(
     `SELECT x.id, CASE WHEN t.deleted = 0 THEN x.topic_id END AS topic_id, x.position, x.title, x.description, x.cover_image_id,
-            x.grade, x.publisher, x.subject, x.book_year, x.book_authors, x.book_pages, x.settings, x.published, x.updated_at
+            x.grade, x.publisher, x.subject, x.book_year, x.book_authors, x.book_pages, x.settings, x.published, x.updated_at,
+            COALESCE(x.format, 'classic') AS format, x.source_test_id
      FROM tests x LEFT JOIN topics t ON t.id = x.topic_id ORDER BY x.topic_id, x.position, x.id`,
   );
   const questions = await all('SELECT * FROM questions WHERE test_id IS NOT NULL');
@@ -224,7 +226,17 @@ async function state() {
   await ensureLinks();
   const links = new Map((await all('SELECT test_id, share_id, enabled FROM test_links')).map((l) => [l.test_id, l]));
   const uses = await fileUsage();
-  const live = new Set((await published()).tests.map((x) => x.id));
+  const snap = await published();
+  const live = new Set([...snap.tests, ...(snap.quizzes || [])].map((x) => x.id));
+  const drafts = await draftTests();
+  const testRow = ({ questions, ...x }) => ({
+    ...x,
+    question_count: gradable(questions).length,
+    problems: testProblems({ ...x, questions }),
+    live: live.has(x.id),
+    share_id: x.format === 'quiz' ? null : links.get(x.id)?.share_id ?? null,
+    link_enabled: x.format === 'quiz' ? false : Boolean(links.get(x.id)?.enabled),
+  });
   return {
     periods: await all('SELECT id, slug, position, title, range_label, summary FROM periods ORDER BY position, id'),
     topics: (await all('SELECT * FROM topics WHERE deleted = 0 ORDER BY period_id, position, id')).map((t) => ({
@@ -233,14 +245,9 @@ async function state() {
       icon: JSON.parse(t.icon || 'null'),
     })),
     // A test of a deleted topic is shown as unlinked until the organizer picks a new topic.
-    tests: (await draftTests()).map(({ questions, ...x }) => ({
-      ...x,
-      question_count: gradable(questions).length,
-      problems: testProblems({ ...x, questions }),
-      live: live.has(x.id),
-      share_id: links.get(x.id)?.share_id ?? null,
-      link_enabled: Boolean(links.get(x.id)?.enabled),
-    })),
+    // Classic tests and quizzes are listed apart; a quiz is never sent as a link.
+    tests: drafts.filter((x) => x.format !== 'quiz').map(testRow),
+    quizzes: drafts.filter((x) => x.format === 'quiz').map(testRow),
     persons: (await all('SELECT * FROM persons ORDER BY position, id')).map((p) => ({ ...p, facts: JSON.parse(p.facts || '[]') })),
     files: (await all("SELECT id, kind, name, mime, size, topic_id, material_id, version, created_at, updated_at FROM files WHERE kind NOT IN ('bookpdf', 'pdf_upload') ORDER BY id DESC")).map(
       (f) => ({ ...f, used_by: uses.get(f.id) || [] }),
@@ -709,8 +716,9 @@ orgRouter.post(
   '/tests',
   wrap(async (req, res) => {
     const test = await parseTest(req.body || {});
+    const format = req.body?.format === 'quiz' ? 'quiz' : 'classic';
     const position = await nextPosition('tests', 'WHERE topic_id = ?', test.topic_id);
-    const { lastInsertRowid } = await run('INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, 0)', test.topic_id, position, test.title);
+    const { lastInsertRowid } = await run('INSERT INTO tests (topic_id, position, title, published, format) VALUES (?, ?, ?, 0, ?)', test.topic_id, position, test.title, format);
     await writeTest(lastInsertRowid, test);
     await sendTest(res, lastInsertRowid, 201);
   }),
@@ -767,7 +775,11 @@ orgRouter.post(
     const copy = { ...source, title: `${source.title} (көшірме)`.slice(0, 160), questions: source.questions.map(strip) };
     const topicId = source.topic_id ?? (await get('SELECT topic_id FROM tests WHERE id = ?', id)).topic_id;
     const position = await nextPosition('tests', 'WHERE topic_id = ?', topicId);
-    const { lastInsertRowid } = await run('INSERT INTO tests (topic_id, position, title, published) VALUES (?, ?, ?, 0)', topicId, position, copy.title);
+    // A copy keeps the format (a quiz's copy is a quiz), but is nobody's quiz copy.
+    const { lastInsertRowid } = await run(
+      'INSERT INTO tests (topic_id, position, title, published, format) VALUES (?, ?, ?, 0, ?)',
+      topicId, position, copy.title, source.format === 'quiz' ? 'quiz' : 'classic',
+    );
     await writeTest(lastInsertRowid, { ...copy, topic_id: topicId });
     await sendTest(res, lastInsertRowid, 201);
   }),
@@ -812,7 +824,8 @@ orgRouter.delete(
       ['DELETE FROM period_book_tests WHERE test_id = ?', id],
     ]);
     // A deleted test also leaves the students' pages at once.
-    if ((await published()).tests.some((x) => x.id === id)) await publishTest(id, false, `Тест өшірілді: ${title}`);
+    const snap = await published();
+    if ([...snap.tests, ...(snap.quizzes || [])].some((x) => x.id === id)) await publishTest(id, false, `Тест өшірілді: ${title}`);
     res.json({ ok: true });
   }),
 );
@@ -822,6 +835,7 @@ orgRouter.use('/feedback', orgFeedbackRouter);
 orgRouter.use('/books', orgBooksRouter);
 orgRouter.use('/links', orgLinksRouter);
 orgRouter.use('/period-books', orgShelvesRouter);
+orgRouter.use('/quizzes', orgQuizRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });
@@ -855,7 +869,7 @@ orgRouter.get(
 /** Where each question text already is: duplicate key → [{ id, title }] of draft tests. */
 async function questionIndex() {
   const index = new Map();
-  for (const t of await draftTests()) {
+  for (const t of (await draftTests()).filter((x) => x.format !== 'quiz')) {
     for (const q of t.questions.flatMap((x) => (x.type === 'context' ? [x, ...x.children] : [x]))) {
       const key = duplicateKey(q);
       if (!index.has(key)) index.set(key, []);

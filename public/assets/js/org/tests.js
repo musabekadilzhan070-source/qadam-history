@@ -85,7 +85,8 @@ const hasContent = (q) =>
   );
 
 // ─── List ────────────────────────────────────────────────────────
-async function createTest(ctx, topicId = '', { periodId = null, entryId = null, bookName = '' } = {}) {
+async function createTest(ctx, topicId = '', { periodId = null, entryId = null, bookName = '', format = 'classic' } = {}) {
+  const quiz = format === 'quiz';
   // From a period's book: only that period's topics, and the new test goes into the book.
   let options = topicOptions(ctx.state, { empty: '— Тақырыпты таңдаңыз —' });
   if (periodId) {
@@ -95,10 +96,11 @@ async function createTest(ctx, topicId = '', { periodId = null, entryId = null, 
   }
   let values = { title: '', topic_id: topicId };
   const ok = await dialog({
-    title: 'Жаңа тест құру',
+    title: quiz ? 'Жаңа Quiz құру' : 'Жаңа тест құру',
     body: `<label class="o-field"><span class="o-label">Тест атауы <i>*</i></span><input id="nt-title" maxlength="160" /></label>
       ${select({ name: 'nt-topic', label: 'Тақырып', value: topicId, options, required: true })}
       ${bookName ? `<p class="o-muted">Тест «${esc(bookName)}» кітабына бірден қосылады.</p>` : ''}
+      ${quiz ? '<p class="o-muted">Quiz — ойын форматы: оқушы барлық сұраққа дұрыс жауап бергенше қате сұрақтар қайта беріледі. Классикалық тесттерден бөлек сақталады.</p>' : ''}
       <p class="o-muted">Сипаттама, мұқаба, уақыт және ұпай баптаулары келесі бетте.</p>`,
     buttons: [
       { label: 'Болдырмау', value: false, kind: 'ghost' },
@@ -117,10 +119,10 @@ async function createTest(ctx, topicId = '', { periodId = null, entryId = null, 
   if (!values.title.trim()) return toast('Тест атауын жазыңыз.', 'error');
   if (!values.topic_id) return toast('Тестті тақырыпқа байланыстырыңыз.', 'error');
   try {
-    const r = await org.post('/tests', { title: values.title, topic_id: Number(values.topic_id), questions: [] });
+    const r = await org.post('/tests', { title: values.title, topic_id: Number(values.topic_id), questions: [], format });
     if (entryId) await org.put(`/period-books/test/${r.id}`, { entry_ids: [entryId] }).catch(() => {});
-    toast('Тест құрылды. Енді сұрақтарды қосыңыз.');
-    ctx.navigate(`/organizer/tests/${r.id}`);
+    toast(quiz ? 'Quiz құрылды. Енді сұрақтарды қосыңыз.' : 'Тест құрылды. Енді сұрақтарды қосыңыз.');
+    ctx.navigate(`${quiz ? '/organizer/quizzes' : '/organizer/tests'}/${r.id}`);
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -174,21 +176,33 @@ const LIST_KEY = 'qadam_org_tests_period';
  * no book yet. A period without books lists its tests by topic. The choice stays in the address
  * (?period=…&book=…), so a reload or the way back from a test returns to the same place.
  */
-export async function testsView(el, _params, ctx, alive) {
+export const quizzesView = (el, params, ctx, alive) => testsView(el, params, ctx, alive, 'quiz');
+
+export async function testsView(el, _params, ctx, alive, format = 'classic') {
   let [{ entries }, { books }] = await Promise.all([org.get('/period-books'), org.get('/books')]);
+  if (!alive()) return;
+  // The same lists for both formats: «Тесттер» (classic) and «Quiz тесттер» (quiz), each with its own tests.
+  const quiz = format === 'quiz';
+  const basePath = quiz ? '/organizer/quizzes' : '/organizer/tests';
+  const idsField = quiz ? 'quiz_ids' : 'test_ids';
+  let pending = null;
+  if (quiz) pending = (await org.get('/quizzes/copy').catch(() => ({ pending: 0 }))).pending;
   if (!alive()) return;
   const query = new URLSearchParams(location.search);
   let period = query.get('period') || '';
   let book = query.get('book') || '';
   if (!period) {
     try {
-      period = localStorage.getItem(LIST_KEY) || '';
+      period = localStorage.getItem(LIST_KEY + (quiz ? '_quiz' : '')) || '';
     } catch {
       /* no storage: the first period */
     }
   }
 
-  const s = () => ctx.state;
+  // Within this view, s().tests is the list of this format (classic tests or quizzes), and each
+  // book's test_ids are its tests of this format.
+  const s = () => ({ ...ctx.state, tests: (quiz ? ctx.state.quizzes : ctx.state.tests) || [] });
+  const idsOf = (e) => e[idsField] || [];
   const bookOf = (e) => books.find((b) => b.id === e.book_id) || null;
   const entryName = (e) => {
     const b = bookOf(e);
@@ -211,9 +225,9 @@ export async function testsView(el, _params, ctx, alive) {
     const qs = new URLSearchParams();
     if (period) qs.set('period', period);
     if (book) qs.set('book', book);
-    history.replaceState(null, '', `/organizer/tests${qs.toString() ? `?${qs}` : ''}`);
+    history.replaceState(null, '', `${basePath}${qs.toString() ? `?${qs}` : ''}`);
     try {
-      localStorage.setItem(LIST_KEY, period);
+      localStorage.setItem(LIST_KEY + (quiz ? '_quiz' : ''), period);
     } catch {
       /* not kept */
     }
@@ -221,7 +235,7 @@ export async function testsView(el, _params, ctx, alive) {
 
   /** A book's tests in the organizer's order for that book; the rest follow in period order. */
   const bookTests = (e, tests) => {
-    const mine = tests.filter((x) => e.test_ids.includes(x.id));
+    const mine = tests.filter((x) => idsOf(e).includes(x.id));
     const at = new Map(mine.map((x, i) => [x.id, i]));
     const pos = (x) => e.positions?.[x.id] || Infinity;
     return mine.sort((a, b) => pos(a) - pos(b) || at.get(a.id) - at.get(b.id));
@@ -244,8 +258,8 @@ export async function testsView(el, _params, ctx, alive) {
         <button type="button" class="o-icon-btn" data-act="up" ${i <= 0 ? 'disabled' : ''} aria-label="${where} жоғары" title="${where} жоғары">▲</button>
         <button type="button" class="o-icon-btn" data-act="down" ${i === siblings.length - 1 ? 'disabled' : ''} aria-label="${where} төмен" title="${where} төмен">▼</button>
       </div>
-      <span class="o-row-icon">${icon('tests')}</span>
-      <div class="o-row-body"><a href="/organizer/tests/${x.id}" data-link><b>${esc(x.title)}</b></a>
+      <span class="o-row-icon">${icon(quiz ? 'quiz' : 'tests')}</span>
+      <div class="o-row-body"><a href="${basePath}/${x.id}" data-link><b>${esc(x.title)}</b></a>
         <small>${topic ? `${esc(topic.title)} · ` : ''}${x.question_count} сұрақ${tagLine(x) ? ` · ${esc(tagLine(x))}` : ''}${x.problems.length ? ` · <span class="o-warn">${x.problems.length} қате түзетуді күтеді</span>` : ''}</small>
         ${
           x.share_id
@@ -258,7 +272,7 @@ export async function testsView(el, _params, ctx, alive) {
         }</div>
       ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}
       <div class="o-row-actions">
-        <a class="btn btn-ghost btn-sm" href="/organizer/tests/${x.id}" data-link>Өңдеу</a>
+        <a class="btn btn-ghost btn-sm" href="${basePath}/${x.id}" data-link>Өңдеу</a>
         ${topic ? '<button type="button" class="btn btn-ghost btn-sm" data-act="books">Кезеңі мен кітабы</button>' : ''}
         <button type="button" class="btn btn-ghost btn-sm" data-act="duplicate">Көшірме</button>
         ${exportButtons(x.id)}
@@ -282,7 +296,7 @@ export async function testsView(el, _params, ctx, alive) {
   function periodBody(p) {
     const tests = periodTests(p.id);
     const list = entriesOf(p.id);
-    const newBtn = (attrs = '') => `<button type="button" class="btn btn-ghost btn-sm" data-new-in="${p.id}" ${attrs}>+ Тест</button>`;
+    const newBtn = (attrs = '') => `<button type="button" class="btn btn-ghost btn-sm" data-new-in="${p.id}" ${attrs}>${quiz ? '+ Quiz' : '+ Тест'}</button>`;
     if (!list.length) {
       // No books on this period yet: its tests by topic, as before.
       const topics = s().topics.filter((t) => t.period_id === p.id);
@@ -297,14 +311,14 @@ export async function testsView(el, _params, ctx, alive) {
                     title: t.title,
                     list: s().tests.filter((x) => x.topic_id === t.id),
                     empty: 'Бұл тақырыпта тест жоқ.',
-                    actions: `<button type="button" class="btn btn-ghost btn-sm" data-new="${t.id}">+ Тест</button>`,
+                    actions: `<button type="button" class="btn btn-ghost btn-sm" data-new="${t.id}">${quiz ? '+ Quiz' : '+ Тест'}</button>`,
                   }),
                 )
                 .join('')
             : '<section class="o-card"><p class="o-muted">Бұл кезеңде әлі тақырып жоқ. Алдымен «Тақырыптар» бөлімінде тақырып қосыңыз.</p></section>'
         }`;
     }
-    const inBook = new Set(list.flatMap((e) => e.test_ids));
+    const inBook = new Set(list.flatMap((e) => idsOf(e)));
     const loose = tests.filter((x) => !inBook.has(x.id));
     const chips = `
       <div class="chips o-book-chips" role="group" aria-label="Кітап бойынша">
@@ -347,9 +361,16 @@ export async function testsView(el, _params, ctx, alive) {
     const p = ps.find((x) => x.slug === period);
     const loose = unlinked();
     el.innerHTML = `
-      <div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа тест құру</button>
-        <button type="button" class="btn btn-dark" data-import>Сұрақтарды импорттау</button>
-        <a class="btn btn-ghost" href="${TEMPLATE_URL}" download>Excel үлгісі</a></div>
+      ${
+        quiz
+          ? `<p class="o-muted o-tests-note">Quiz — тесттің ойын форматы: оқушы барлық сұраққа дұрыс жауап бергенше қате сұрақтар кезектің соңына қайта қосылады. Quiz тесттері классикалық тесттерден бөлек сақталады, өңделеді және жарияланады: біреуін өзгерту екіншісін өзгертпейді.</p>
+            <div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа Quiz құру</button>
+              <button type="button" class="btn btn-dark" data-copy-quizzes ${pending ? '' : 'disabled'}>Классикалық тесттерден Quiz көшірмесін жасау${pending ? ` (${pending})` : ''}</button>
+              <a class="btn btn-ghost" href="/organizer/quiz-results" data-link>Quiz нәтижелері</a></div>`
+          : `<div class="o-toolbar"><button type="button" class="btn" data-new>+ Жаңа тест құру</button>
+        <button type="button" class="btn btn-dark" data-import>Сұрақтарды импорттау</button>`
+      }${quiz ? '' : `
+        <a class="btn btn-ghost" href="${TEMPLATE_URL}" download>Excel үлгісі</a></div>`}
       <div class="chips o-period-chips" role="group" aria-label="Тарихи кезеңдер">
         ${ps
           .map(
@@ -374,7 +395,7 @@ export async function testsView(el, _params, ctx, alive) {
     const p = s().periods.find((pp) => pp.id === topic?.period_id);
     if (!p) return false;
     const list = entriesOf(p.id);
-    let chosen = new Set(list.filter((e) => e.test_ids.includes(x.id)).map((e) => e.id));
+    let chosen = new Set(list.filter((e) => idsOf(e).includes(x.id)).map((e) => e.id));
     const ok = await dialog({
       title: `«${x.title}»: кезеңі мен кітабы`,
       body: `
@@ -426,11 +447,33 @@ export async function testsView(el, _params, ctx, alive) {
       return draw();
     }
     const nb = e.target.closest('[data-new]');
-    if (nb) return createTest(ctx, nb.dataset.new || '');
+    if (nb) return createTest(ctx, nb.dataset.new || '', { format });
     const inPeriod = e.target.closest('[data-new-in]');
     if (inPeriod) {
       const entry = entries.find((x) => x.id === Number(inPeriod.dataset.entryNew));
-      return createTest(ctx, '', { periodId: Number(inPeriod.dataset.newIn), entryId: entry?.id || null, bookName: entry ? entryName(entry) : '' });
+      return createTest(ctx, '', { periodId: Number(inPeriod.dataset.newIn), entryId: entry?.id || null, bookName: entry ? entryName(entry) : '', format });
+    }
+    const copyBtn = e.target.closest('[data-copy-quizzes]');
+    if (copyBtn) {
+      const ok = await confirmDialog(
+        'Quiz көшірмелерін жасау',
+        `Quiz көшірмесі әлі жоқ ${pending} классикалық тесттің әрқайсысына бір Quiz көшірмесі жасалады: сұрақтар, жауаптар, суреттер, контекст, сыныбы, баспасы, кезеңі мен кітабы сол күйі сақталады. Классикалық тесттер өзгермейді. Көшіру алдында деректердің резервтік көшірмесі сақталады. Бұрын көшірілген (тіпті кейін жойылған) тест қайта көшірілмейді.`,
+        { ok: 'Көшірмелерді жасау' },
+      );
+      if (!ok) return;
+      await busy(copyBtn, async () => {
+        try {
+          const r = await org.post('/quizzes/copy');
+          toast(r.mismatches.length ? `Көшірілді: ${r.copied} Quiz. Тексеруде ${r.mismatches.length} айырмашылық табылды.` : `Көшірілді: ${r.copied} Quiz (${r.questions} сұрақ), оның ${r.live} жарияланды. Барлығы түпнұсқамен сәйкес.`, r.mismatches.length ? 'error' : undefined);
+          pending = (await org.get('/quizzes/copy')).pending;
+          ({ entries } = await org.get('/period-books'));
+          await ctx.reload();
+          draw();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+      return;
     }
     const pick = e.target.closest('[data-pick-tests]');
     if (pick) {
@@ -438,9 +481,9 @@ export async function testsView(el, _params, ctx, alive) {
       const p = s().periods.find((x) => x.id === entry?.period_id);
       if (!entry || !p) return;
       try {
-        const ids = await pickTests(s(), p, bookOf(entry), periodTests(p.id).filter((x) => entry.test_ids.includes(x.id)).map((x) => x.id));
+        const ids = await pickTests(s(), p, bookOf(entry), periodTests(p.id).filter((x) => idsOf(entry).includes(x.id)).map((x) => x.id));
         if (!ids) return;
-        const saved = await org.put(`/period-books/${entry.id}`, { test_ids: ids });
+        const saved = await org.put(`/period-books/${entry.id}`, { [idsField]: ids });
         entries = entries.map((x) => (x.id === entry.id ? saved : x));
         toast(`Сақталды: ${ids.length} тест.`);
         draw();
@@ -502,7 +545,7 @@ export async function testsView(el, _params, ctx, alive) {
     const [kind, raw] = key.split(':');
     try {
       if (kind === 'entry') {
-        const saved = await org.post(`/period-books/${raw}/order`, { test_ids: ids });
+        const saved = await org.post(`/period-books/${raw}/order`, { [idsField]: ids });
         entries = entries.map((x) => (x.id === saved.id ? saved : x));
         toast('Кітаптағы тесттердің реті сақталды.');
       } else {
@@ -895,7 +938,8 @@ export async function testEditView(el, [id], ctx, alive) {
     el.innerHTML = `
       <div class="o-card o-test-head">
         <div class="o-card-head">
-          <a class="o-back" href="/organizer/tests" data-link>← Тесттер</a>
+          <a class="o-back" href="${test.format === 'quiz' ? '/organizer/quizzes' : '/organizer/tests'}" data-link>${test.format === 'quiz' ? '← Quiz тесттер' : '← Тесттер'}</a>
+          ${test.format === 'quiz' ? `<span class="o-badge o-badge-quiz">${icon('quiz')} QUIZ</span>` : ''}
           <div class="o-row-actions">
             ${STATE_BADGE[test.live_state]}
             <button type="button" class="btn btn-ghost btn-sm" data-act="preview">Оқушы ретінде қарау</button>
@@ -1060,7 +1104,7 @@ export async function testEditView(el, [id], ctx, alive) {
       const target = await importQuestions(ctx, { testId: test.id });
       if (!target) return;
       await ctx.reload();
-      if (target !== test.id) return ctx.navigate(`/organizer/tests/${target}`, { force: true });
+      if (target !== test.id) return ctx.navigate(`${test.format === 'quiz' ? '/organizer/quizzes' : '/organizer/tests'}/${target}`, { force: true });
       test = await org.get(`/tests/${test.id}`);
       redraw();
       return;
@@ -1096,14 +1140,14 @@ export async function testEditView(el, [id], ctx, alive) {
       await busy(btn, async () => {
         const copy = await org.post(`/tests/${test.id}/duplicate`);
         toast(`Көшірме жасалды: «${copy.title}». Енді көшірмені өңдеп жатырсыз.`);
-        ctx.navigate(`/organizer/tests/${copy.id}`, { force: true });
+        ctx.navigate(`${test.format === 'quiz' ? '/organizer/quizzes' : '/organizer/tests'}/${copy.id}`, { force: true });
       });
       return;
     }
     if (act === 'delete') {
       if (await deleteTest(ctx, { ...test, live: test.live_state !== 'hidden' })) {
         dirty = false;
-        ctx.navigate('/organizer/tests', { force: true });
+        ctx.navigate(test.format === 'quiz' ? '/organizer/quizzes' : '/organizer/tests', { force: true });
       }
       return;
     }

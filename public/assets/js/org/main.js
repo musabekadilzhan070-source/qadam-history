@@ -6,7 +6,8 @@ import { topicsView, topicEditView } from './topics.js';
 import { emblemsView } from './emblems.js';
 import { studentsView } from './students.js';
 import { feedbackView } from './feedback.js';
-import { testsView, testEditView } from './tests.js';
+import { testsView, testEditView, quizzesView } from './tests.js';
+import { quizResultsView } from './quizresults.js';
 import { imagesView } from './images.js';
 import { booksView, bookEditView } from './books.js';
 import { linksView } from './links.js';
@@ -24,6 +25,9 @@ const ROUTES = [
   { re: /^\/organizer\/topics\/(new|\d+)\/?$/, nav: 'topics', view: topicEditView, title: 'Тақырып' },
   { re: /^\/organizer\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/organizer\/tests\/(\d+)\/?$/, nav: 'tests', view: testEditView, title: 'Тест' },
+  { re: /^\/organizer\/quizzes\/?$/, nav: 'quizzes', view: quizzesView, title: 'Quiz тесттер' },
+  { re: /^\/organizer\/quizzes\/(\d+)\/?$/, nav: 'quizzes', view: testEditView, title: 'Quiz' },
+  { re: /^\/organizer\/quiz-results\/?$/, nav: 'quiz-results', view: quizResultsView, title: 'Quiz нәтижелері' },
   { re: /^\/organizer\/links\/?$/, nav: 'links', view: linksView, title: 'Сілтеме арқылы тапсырылған тесттер' },
   { re: /^\/organizer\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/organizer\/books\/(new|\d+)\/?$/, nav: 'books', view: bookEditView, title: 'Кітап' },

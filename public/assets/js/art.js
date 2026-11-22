@@ -34,6 +34,7 @@ const ICONS = {
   cross: '<path d="M6 6l12 12M18 6 6 18"/>',
   logout: '<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.2"/>',
+  quiz: '<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
   book: '<path d="M6 4h11a1 1 0 0 1 1 1v15H7a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1z"/><path d="M5 18a2 2 0 0 1 2-2h11"/>',
 };
 
