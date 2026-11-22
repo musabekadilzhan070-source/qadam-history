@@ -365,6 +365,35 @@ CREATE TABLE IF NOT EXISTS content_imports (
 // Quiz: a second, game-like format of a test. A quiz is its own row in `tests` (format 'quiz'), with
 // its own questions, edited and published on its own; source_test_id is the classic test it was
 // copied from. A student's quiz progress is kept on the server, one run at a time per quiz.
+// Quizzes played through a link (/t/<id>): a name instead of an account, the browser's participant
+// id instead of a user, and the saved version of the quiz the run was given (link_versions).
+const SCHEMA_V6 = `
+CREATE TABLE IF NOT EXISTS link_quiz_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  test_id INTEGER NOT NULL,
+  version_id INTEGER NOT NULL,
+  participant TEXT NOT NULL,
+  name TEXT NOT NULL,
+  test_title TEXT NOT NULL DEFAULT '',
+  question_ids TEXT NOT NULL DEFAULT '[]',
+  queue TEXT NOT NULL DEFAULT '[]',
+  wrong_ids TEXT NOT NULL DEFAULT '[]',
+  log TEXT NOT NULL DEFAULT '[]',
+  total INTEGER NOT NULL DEFAULT 0,
+  first_correct INTEGER NOT NULL DEFAULT 0,
+  repeated INTEGER NOT NULL DEFAULT 0,
+  wrong_answers INTEGER NOT NULL DEFAULT 0,
+  answers INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,
+  duration_sec INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_link_quiz_runs_test ON link_quiz_runs(test_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_link_quiz_runs_open ON link_quiz_runs(participant, test_id) WHERE finished_at IS NULL;
+`;
+
 const SCHEMA_V5 = `
 -- Which classic test already has its quiz copy. Kept even when the copy is deleted, so copying
 -- again never makes a second copy of the same test.
@@ -468,7 +497,13 @@ const COLUMNS = [
 async function addMissingColumns() {
   for (const [table, column, type] of COLUMNS) {
     const cols = await all(`PRAGMA table_info(${table})`);
-    if (!cols.some((c) => c.name === column)) await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    if (cols.some((c) => c.name === column)) continue;
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    } catch (err) {
+      // Two cold starts at once: the other one has just added it.
+      if (!/duplicate column/i.test(String(err?.message))) throw err;
+    }
   }
 }
 
@@ -479,6 +514,7 @@ export async function migrate() {
   await db.executeMultiple(SCHEMA_V3);
   await db.executeMultiple(SCHEMA_V4);
   await db.executeMultiple(SCHEMA_V5);
+  await db.executeMultiple(SCHEMA_V6);
   const firstReworkRun = !(await all('PRAGMA table_info(link_attempts)')).some((c) => c.name === 'kind');
   await addMissingColumns();
   await db.execute('CREATE INDEX IF NOT EXISTS idx_link_attempts_root ON link_attempts(root_id)');

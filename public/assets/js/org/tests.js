@@ -264,10 +264,10 @@ export async function testsView(el, _params, ctx, alive, format = 'classic') {
         ${
           x.share_id
             ? `<div class="o-link-line"><span class="o-badge ${x.link_enabled ? 'o-badge-on' : 'o-badge-off'}">${x.link_enabled ? 'Сілтеме қосулы' : 'Сілтеме өшірулі'}</span>
-                <a class="btn btn-ghost btn-sm" href="/t/${esc(x.share_id)}" target="_blank" rel="noopener">Тестті ашу</a>
+                <a class="btn btn-ghost btn-sm" href="/t/${esc(x.share_id)}" target="_blank" rel="noopener">${quiz ? 'Quiz-ді ашу' : 'Тестті ашу'}</a>
                 <button type="button" class="btn btn-ghost btn-sm" data-act="copy-link">Сілтемені көшіру</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-act="link-toggle" aria-pressed="${x.link_enabled}">${x.link_enabled ? 'Сілтеме арқылы тапсыруды өшіру' : 'Сілтеме арқылы тапсыру'}</button>
-                <a class="btn btn-ghost btn-sm" href="/organizer/links?test=${x.id}" data-link>Нәтижелерді көру</a></div>`
+                <a class="btn btn-ghost btn-sm" href="${quiz ? `/organizer/quiz-results?test=${x.id}` : `/organizer/links?test=${x.id}`}" data-link>Нәтижелерді көру</a></div>`
             : ''
         }</div>
       ${x.live ? STATE_BADGE.live : STATE_BADGE.hidden}

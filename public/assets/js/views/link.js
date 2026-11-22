@@ -4,6 +4,7 @@ import { icon, ornamentMark } from '../art.js';
 import { gradeLabel } from '../catalog.js';
 import { runQuiz } from './quiz.js';
 import { reviewList } from './review.js';
+import { createGame, quizTitle } from './quizgame.js';
 
 // A test sent as a link (/t/<id>): open to anyone with the link, no account. The student reads
 // what the test is, writes their name, takes it with the usual QADAM player and sees the end
@@ -130,6 +131,7 @@ export async function linkTestView(el, [slug], app, alive) {
     return;
   }
   if (!alive()) return;
+  if (info.format === 'quiz') return quizLink(el, slug, info, app, alive);
   app.setTitle(info.title);
   el.innerHTML = `<div class="link-page">${introHtml(info, slug)}</div>`;
 
@@ -218,4 +220,92 @@ export async function linkTestView(el, [slug], app, alive) {
     if (again) rework(again);
   });
   return () => quiz?.stop();
+}
+
+// ─── A Quiz sent as a link ─────────────────────────────────────────
+// The same name form; then the Quiz game: wrong questions come back at the end until all are
+// right. The run is kept on the server for this browser, so a reload continues it.
+
+function quizIntroHtml(info) {
+  const facts = [
+    `<li>${icon('tests')}<span><b>${info.question_count}</b> сұрақ</span></li>`,
+    `<li>${icon('check')}<span>Мақсат: <b>100%</b></span></li>`,
+    info.closes_at ? `<li>${icon('periods')}<span>Тапсыру мерзімі: <b>${fmt.format(new Date(info.closes_at))}</b> дейін</span></li>` : '',
+    `<li>${icon('results')}<span>${info.retakes ? 'Қайта тапсыруға болады' : 'Тек бір рет тапсыруға болады'}</span></li>`,
+  ].join('');
+  let action;
+  if (!info.open) {
+    action = `<div class="notice notice-closed" role="alert"><span>${esc(info.message)}</span></div>`;
+  } else if (info.already_done) {
+    action = '<div class="notice notice-closed" role="alert"><span>Сіз бұл Quiz-ді осы құрылғыдан тапсырып қойдыңыз. Организатор қайта тапсыруға рұқсат бермеген.</span></div>';
+  } else {
+    action = `
+      <form class="link-form" data-quiz-form novalidate>
+        <label class="field"><span>Аты-жөніңіз</span>
+          <input name="name" autocomplete="name" maxlength="80" required placeholder="Мысалы: Әлихан Нұрлан" value="${esc(savedName())}" /></label>
+        <p class="form-error" data-error role="alert" hidden></p>
+        <button type="submit" class="btn btn-block">Quiz-ді бастау ${icon('arrow', 'icon icon-arrow')}</button>
+        <p class="link-note">Тіркелу, пошта немесе құпиясөз қажет емес. Аты-жөніңізді толық жазыңыз: организатор нәтижені осы атпен көреді.</p>
+      </form>`;
+  }
+  return `
+    <section class="panel link-intro link-quiz">
+      ${head({ ...info, title: quizTitle(info.title) }).replace('Сілтеме арқылы тест', `${icon('quiz')} Сілтеме арқылы Quiz`)}
+      ${info.description ? `<p class="link-desc">${esc(info.description)}</p>` : ''}
+      <ul class="link-facts">${facts}</ul>
+      <div class="link-rules">
+        <h2>Нұсқаулық</h2>
+        <ol>
+          <li>Аты-жөніңізді жазып, «Quiz-ді бастау» батырмасын басыңыз.</li>
+          <li>Сұрақтар бір-бірден шығады. Жауап бергеннен кейін дұрыс-қатесі бірден көрсетіледі.</li>
+          <li>Қате жауап берген сұрақ соңында қайта беріледі. Барлық сұраққа дұрыс жауап бергенде ғана Quiz аяқталады.</li>
+          <li>Бетті жаңартсаңыз, Quiz осы құрылғыда тоқтаған жерінен жалғасады.</li>
+        </ol>
+      </div>
+      ${action}
+    </section>`;
+}
+
+function quizLink(el, slug, info, app, alive) {
+  const base = `/api/link/${encodeURIComponent(slug)}/quiz`;
+  app.setTitle(`Quiz: ${quizTitle(info.title)}`);
+  const who = (s) => `<p class="link-who">${icon('profile')}<span>${esc(s.name || '')}</span><span class="link-who-tag">Quiz</span></p>`;
+  const game = createGame(el, app, alive, {
+    crumbs: (s) => (s.name ? who(s) : ''),
+    answer: (s, body) => api.post(`${base}/answer`, { ...body, run_id: s.run_id }),
+    restart: info.retakes ? (s) => api.post(`${base}/start`, { name: s.name }) : null,
+    endLinks: () => '<p class="link-note qg-link-note">Нәтижеңіз сақталды, оны организатор көреді. Осы бетті жаба беруге болады.</p>',
+  });
+  const intro = () => {
+    el.innerHTML = `<div class="link-page">${quizIntroHtml(info)}</div>`;
+  };
+  if (info.run) game.play(info.run);
+  else intro();
+
+  el.addEventListener('submit', async (e) => {
+    if (!e.target.matches('[data-quiz-form]')) return;
+    e.preventDefault();
+    const input = e.target.querySelector('input[name="name"]');
+    const btn = e.target.querySelector('button');
+    const box = e.target.querySelector('[data-error]');
+    const name = input.value.replace(/\s+/g, ' ').trim();
+    if (name.length < 3 || !/\p{L}/u.test(name)) {
+      box.textContent = 'Аты-жөніңізді толық жазыңыз (кемінде 3 әріп).';
+      box.hidden = false;
+      input.focus();
+      return;
+    }
+    saveName(name);
+    btn.disabled = true;
+    try {
+      const state = await api.post(`${base}/start`, { name });
+      if (alive()) game.play(state);
+    } catch (err) {
+      if (!alive()) return;
+      btn.disabled = false;
+      box.textContent = err.message;
+      box.hidden = false;
+    }
+  });
+  return () => game.stop();
 }
