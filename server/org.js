@@ -234,8 +234,8 @@ async function state() {
     question_count: gradable(questions).length,
     problems: testProblems({ ...x, questions }),
     live: live.has(x.id),
-    share_id: x.format === 'quiz' ? null : links.get(x.id)?.share_id ?? null,
-    link_enabled: x.format === 'quiz' ? false : Boolean(links.get(x.id)?.enabled),
+    share_id: links.get(x.id)?.share_id ?? null,
+    link_enabled: Boolean(links.get(x.id)?.enabled),
   });
   return {
     periods: await all('SELECT id, slug, position, title, range_label, summary FROM periods ORDER BY position, id'),

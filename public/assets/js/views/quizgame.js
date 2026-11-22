@@ -34,7 +34,13 @@ export async function quizGameView(el, [id], app, alive) {
   return () => game.stop();
 }
 
-function createGame(el, app, alive) {
+/**
+ * The game on a page. `opts` changes it for a quiz sent as a link (no account): how an answer
+ * and a new start are sent, the line above the stage and the way back.
+ */
+export function createGame(el, app, alive, opts = {}) {
+  const sendAnswer = opts.answer || ((s, body) => api.post(`/api/quizzes/runs/${s.run_id}/answer`, body));
+  const restart = opts.restart === undefined ? (s) => api.post(`/api/quizzes/${s.quiz.id}/start`) : opts.restart;
   let state = null;
   let answer = null;
   let locked = false;
@@ -48,6 +54,7 @@ function createGame(el, app, alive) {
   };
 
   function crumbs(quiz) {
+    if (opts.crumbs) return opts.crumbs(state || { quiz });
     return `<ol class="breadcrumb qg-crumbs">
       <li><a href="/periods" data-link>Тарихи кезеңдер</a></li>
       ${quiz.period ? `<li><a href="${periodHref(quiz)}" data-link>${esc(quiz.period.title)}</a></li>` : ''}
@@ -316,7 +323,7 @@ function createGame(el, app, alive) {
     el.querySelector('.qg-play')?.classList.add('is-busy');
     let res;
     try {
-      res = await api.post(`/api/quizzes/runs/${state.run_id}/answer`, { question_id: q.id, version: state.version, answer });
+      res = await sendAnswer(state, { question_id: q.id, version: state.version, answer });
     } catch (err) {
       if (!alive()) return;
       // The run moved on elsewhere (another tab, a double tap): show where it is now.
@@ -430,14 +437,14 @@ function createGame(el, app, alive) {
         </ul>
         <div class="qg-actions">
           ${s.next ? `<a class="qg-btn qg-btn-go" href="/quiz/${s.next.id}" data-link>Келесі Quiz: ${esc(quizTitle(s.next.title))} ${icon('arrow')}</a>` : ''}
-          <button type="button" class="qg-btn ${s.next ? 'qg-btn-ghost' : 'qg-btn-go'}" data-again>Қайта ойнау</button>
-          <a class="qg-btn qg-btn-ghost" href="${periodHref(s.quiz)}" data-link>${icon('back')} Барлық Quiz</a>
+          ${restart ? `<button type="button" class="qg-btn ${s.next ? 'qg-btn-ghost' : 'qg-btn-go'}" data-again>Қайта ойнау</button>` : ''}
+          ${opts.endLinks ? opts.endLinks(s) : `<a class="qg-btn qg-btn-ghost" href="${periodHref(s.quiz)}" data-link>${icon('back')} Барлық Quiz</a>`}
         </div>
       </section>`;
-    el.querySelector('[data-again]').addEventListener('click', async (e) => {
+    el.querySelector('[data-again]')?.addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       try {
-        play(await api.post(`/api/quizzes/${s.quiz.id}/start`));
+        play(await restart(s));
       } catch (err) {
         e.currentTarget.disabled = false;
         flash(err.message);

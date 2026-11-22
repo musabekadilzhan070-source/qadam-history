@@ -28,7 +28,7 @@ const posId = (v) => {
 };
 
 /** Grading in a quiz: a question counts only when fully right; the correct answer is always shown after a wrong one. */
-const quizSettings = (settings) => ({ ...settingsOf(settings), partial_credit: false, show_answers: true });
+export const quizSettings = (settings) => ({ ...settingsOf(settings), partial_credit: false, show_answers: true });
 
 /** The published quizzes (older snapshots have none). */
 export const liveQuizzes = (snap) => snap.quizzes || [];
@@ -71,7 +71,7 @@ function studentStep(step, settings) {
 }
 
 /** What a run row holds, as numbers and lists. */
-function readRun(row) {
+export function readRun(row) {
   return {
     ...row,
     question_ids: parse(row.question_ids, []),
@@ -122,7 +122,7 @@ const quizInfo = (found) => ({
  */
 function nextQuiz(found) {
   const { snap, test, topic } = found;
-  if (!topic) return null;
+  if (!snap || !topic) return null;
   const topics = snap.topics.filter((t) => t.period_id === topic.period_id);
   const order = new Map(topics.map((t, i) => [t.id, i]));
   const list = liveQuizzes(snap)
@@ -136,7 +136,7 @@ function nextQuiz(found) {
 }
 
 /** The run as the game needs it: the question to answer now (or the end), and the progress. */
-function runView(r, found) {
+export function runView(r, found) {
   const summary = runSummary(r);
   const head = r.queue[0];
   const step = head ? found.byId.get(head) : null;
@@ -159,13 +159,13 @@ function runView(r, found) {
  * Keeps a run in step with the quiz as it is published now: questions the organizer removed
  * leave the queue (a run whose remaining questions were all removed is finished).
  */
-async function syncRun(r, found) {
+export async function syncRun(r, found, table = 'quiz_runs') {
   if (r.finished_at) return r;
   const queue = r.queue.filter((id) => found.byId.has(id));
   if (queue.length === r.queue.length) return r;
   const done = !queue.length;
   const { changes } = await run(
-    `UPDATE quiz_runs SET queue = ?, total = ?, version = version + 1, updated_at = datetime('now')${done ? ", finished_at = datetime('now')" : ''}
+    `UPDATE ${table} SET queue = ?, total = ?, version = version + 1, updated_at = datetime('now')${done ? ", finished_at = datetime('now')" : ''}
      WHERE id = ? AND version = ?`,
     JSON.stringify(queue),
     // Removed questions that were already answered still count in the total.
@@ -173,8 +173,7 @@ async function syncRun(r, found) {
     r.id,
     r.version,
   );
-  if (!changes) return readRun(await get('SELECT * FROM quiz_runs WHERE id = ?', r.id));
-  return readRun(await get('SELECT * FROM quiz_runs WHERE id = ?', r.id));
+  return readRun(await get(`SELECT * FROM ${table} WHERE id = ?`, r.id));
 }
 
 const openRunOf = async (userId, testId) => {
@@ -218,7 +217,11 @@ async function answerRun(userId, runId, body) {
   if (!row) failWith(404, 'Quiz табылмады.');
   const found = await findQuiz(row.test_id);
   if (!found) failWith(404, 'Бұл Quiz қазір оқушыларға жабық.');
-  const r = await syncRun(readRun(row), found);
+  return applyAnswer(await syncRun(readRun(row), found), found, body);
+}
+
+/** Grades an answer to the head of the queue of a run (of a student, or of a link) and moves the queue. */
+export async function applyAnswer(r, found, body, table = 'quiz_runs') {
   if (r.finished_at) failWith(409, 'Бұл Quiz аяқталған.', { state: runView(r, found) });
   const head = r.queue[0];
   const questionId = posId(body?.question_id);
@@ -246,7 +249,7 @@ async function answerRun(userId, runId, body) {
   const log = [...r.log, { q: head, ok, t: Math.round(now / 1000) }].slice(-MAX_LOG);
   const finished = !queue.length;
   const { changes } = await run(
-    `UPDATE quiz_runs SET queue = ?, wrong_ids = ?, log = ?, first_correct = first_correct + ?, repeated = ?, wrong_answers = wrong_answers + ?,
+    `UPDATE ${table} SET queue = ?, wrong_ids = ?, log = ?, first_correct = first_correct + ?, repeated = ?, wrong_answers = wrong_answers + ?,
             answers = answers + 1, duration_sec = COALESCE(duration_sec, 0) + ?, version = version + 1, updated_at = datetime('now')
             ${finished ? ", finished_at = datetime('now')" : ''}
      WHERE id = ? AND version = ? AND finished_at IS NULL`,
@@ -260,7 +263,7 @@ async function answerRun(userId, runId, body) {
     r.id,
     r.version,
   );
-  const fresh = readRun(await get('SELECT * FROM quiz_runs WHERE id = ?', r.id));
+  const fresh = readRun(await get(`SELECT * FROM ${table} WHERE id = ?`, r.id));
   if (!changes) failWith(409, 'Бұл жауап бұрын қабылданған. Қазіргі сұрақ көрсетілді.', { state: runView(fresh, found) });
   return { correct: ok, feedback: feedbackOf(item), state: runView(fresh, found) };
 }
@@ -555,17 +558,35 @@ orgQuizRouter.get(
        ORDER BY COALESCE(r.finished_at, r.updated_at) DESC, r.id DESC LIMIT 1000`,
       ...args,
     );
-    res.json({
-      runs: rows.map((row) => ({
-        ...runSummary(readRun(row)),
-        title: row.live_title,
-        user: { id: row.user_id, display_name: row.display_name, login: row.email || row.username },
-        grade: row.grade ?? null,
-        publisher: row.publisher || '',
-        topic_title: row.topic_title || '',
-        period_title: row.period_title || '',
-      })),
+    // Runs through a link (a typed name, no account): not when one student's runs are asked for.
+    const linkRows = posId(req.query.user)
+      ? []
+      : await all(
+          `SELECT r.*, x.grade, x.publisher, COALESCE(x.title, r.test_title) AS live_title, t.title AS topic_title, p.title AS period_title
+           FROM link_quiz_runs r
+           LEFT JOIN tests x ON x.id = r.test_id LEFT JOIN topics t ON t.id = x.topic_id LEFT JOIN periods p ON p.id = t.period_id
+           ${posId(req.query.test) ? 'WHERE r.test_id = ?' : ''}
+           ORDER BY COALESCE(r.finished_at, r.updated_at) DESC, r.id DESC LIMIT 1000`,
+          ...(posId(req.query.test) ? [posId(req.query.test)] : []),
+        );
+    const view = (row, via) => ({
+      ...runSummary(readRun(row)),
+      title: row.live_title,
+      via,
+      user:
+        via === 'link'
+          ? { id: null, display_name: row.name, login: 'Сілтеме арқылы' }
+          : { id: row.user_id, display_name: row.display_name, login: row.email || row.username },
+      grade: row.grade ?? null,
+      publisher: row.publisher || '',
+      topic_title: row.topic_title || '',
+      period_title: row.period_title || '',
     });
+    const stamp = (r) => String(r.finished_at || r.updated_at || '');
+    const runs = [...rows.map((r) => [stamp(r), view(r, 'site')]), ...linkRows.map((r) => [stamp(r), view(r, 'link')])]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([, v]) => v);
+    res.json({ runs: runs.slice(0, 1500) });
   }),
 );
 

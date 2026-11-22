@@ -7,6 +7,7 @@ import { makeToken, readToken, timeAllowed, reworkSettings } from './quiz.js';
 import { parseCookies } from './auth.js';
 import { writeCsv, writeXlsx } from './sheets.js';
 import { latin } from './latin.js';
+import { quizSteps, quizSettings, readRun, runView, applyAnswer } from './quizgame.js';
 
 // ─── Test links ───────────────────────────────────────────────────
 // Every test has a permanent link /t/<share_id>, like a Google Form. The organizer turns the link
@@ -34,11 +35,11 @@ const GRACE_SEC = 90;
 /** An unfinished attempt without a time limit can be resumed for this long. */
 const RESUME_MS = 12 * 3600 * 1000;
 
-/** Gives every classic test that has none its link row (quizzes are never sent as links) (a new test gets its link at once). */
+/** Gives every test (classic or quiz) that has none its link row (a new test gets its link at once). */
 export async function ensureLinks() {
   await run(
     `INSERT OR IGNORE INTO test_links (test_id, share_id)
-     SELECT id, lower(hex(randomblob(8))) FROM tests WHERE COALESCE(format, 'classic') <> 'quiz' AND id NOT IN (SELECT test_id FROM test_links)`,
+     SELECT id, lower(hex(randomblob(8))) FROM tests WHERE id NOT IN (SELECT test_id FROM test_links)`,
   );
 }
 
@@ -101,6 +102,13 @@ async function currentVersion(testId) {
   return { id, test };
 }
 
+/** The link of any test (classic or quiz), with the test's format. */
+const anyLinkBySlug = (slug) =>
+  /^[0-9a-f]{16}$/.test(String(slug))
+    ? get("SELECT l.*, x.title, COALESCE(x.format, 'classic') AS format FROM test_links l JOIN tests x ON x.id = l.test_id WHERE l.share_id = ?", String(slug))
+    : null;
+
+/** The link of a classic test (the routes of the classic player). */
 const linkBySlug = (slug) =>
   /^[0-9a-f]{16}$/.test(String(slug)) ? get("SELECT l.*, x.title FROM test_links l JOIN tests x ON x.id = l.test_id AND x.format IS NOT 'quiz' WHERE l.share_id = ?", String(slug)) : null;
 
@@ -171,8 +179,9 @@ export const publicLinksRouter = express.Router();
 publicLinksRouter.get(
   '/:slug',
   wrap(async (req, res) => {
-    const link = await linkBySlug(req.params.slug);
+    const link = await anyLinkBySlug(req.params.slug);
     if (!link) throw failWith(404, 'Мұндай тест табылмады. Сілтемені тексеріңіз.');
+    if (link.format === 'quiz') return res.json(await quizLinkInfo(req, link));
     const test = await savedTest(link.test_id);
     const state = linkState(link);
     const participant = parseCookies(req.headers.cookie)[PARTICIPANT];
@@ -379,6 +388,108 @@ publicLinksRouter.post(
   }),
 );
 
+
+// ─── Quiz through a link ─────────────────────────────────────────
+// The same link, settings and name form as a classic test; the student plays the Quiz game:
+// a wrong answer comes back at the end until every question is right. The run is kept on the
+// server for this browser (participant cookie), on the saved version of the quiz it started with.
+
+/** The game data of a saved quiz version. */
+function quizFound(test) {
+  const steps = quizSteps(test);
+  return { snap: null, test, topic: null, period: null, steps, byId: new Map(steps.map((x) => [x.q.id, x])), settings: quizSettings(test.settings) };
+}
+
+const openQuizRun = async (testId, participant) => {
+  const row = await get('SELECT * FROM link_quiz_runs WHERE test_id = ? AND participant = ? AND finished_at IS NULL ORDER BY id DESC LIMIT 1', testId, participant);
+  return row ? readRun(row) : null;
+};
+
+/** A run as the game shows it, with the name typed by the student. */
+async function linkRunView(r) {
+  const test = await versionById(r.version_id);
+  if (!test) throw failWith(404, 'Quiz табылмады. Сілтемені қайта ашыңыз.');
+  return { ...runView(r, quizFound(test)), name: r.name };
+}
+
+async function quizLinkInfo(req, link) {
+  const test = await savedTest(link.test_id);
+  const state = linkState(link);
+  const participant = parseCookies(req.headers.cookie)[PARTICIPANT];
+  const open = participant ? await openQuizRun(link.test_id, participant) : null;
+  const done = participant ? await get('SELECT COUNT(*) AS n FROM link_quiz_runs WHERE test_id = ? AND participant = ? AND finished_at IS NOT NULL', link.test_id, participant) : { n: 0 };
+  const count = test ? quizSteps(test).length : 0;
+  return {
+    format: 'quiz',
+    title: test?.title || link.title,
+    description: test?.description || '',
+    topic_title: test?.topic_title || '',
+    subject: test?.subject || '',
+    grade: test?.grade ?? null,
+    publisher: test?.publisher || '',
+    question_count: count,
+    opens_at: link.opens_at,
+    closes_at: link.closes_at,
+    retakes: Boolean(link.retakes),
+    ...(count ? state : { open: false, reason: 'empty', message: 'Бұл Quiz-де әзірге сұрақ жоқ.' }),
+    // An unfinished run continues even after the link closes: the student keeps their progress.
+    run: open ? await linkRunView(open) : null,
+    finished_times: done.n,
+    already_done: !open && done.n > 0 && !link.retakes,
+  };
+}
+
+const quizLink = async (slug) => {
+  const link = await anyLinkBySlug(slug);
+  if (!link || link.format !== 'quiz') throw failWith(404, 'Мұндай Quiz табылмады. Сілтемені тексеріңіз.');
+  return link;
+};
+
+/** Starts the quiz with the typed name, or continues this browser's unfinished run. */
+publicLinksRouter.post(
+  '/:slug/quiz/start',
+  wrap(async (req, res) => {
+    const link = await quizLink(req.params.slug);
+    const participant = participantOf(req, res);
+    const open = await openQuizRun(link.test_id, participant);
+    if (open) return res.json(await linkRunView(open));
+    const state = linkState(link);
+    if (!state.open) throw failWith(403, state.message, { reason: state.reason });
+    const name = cleanName(req.body?.name);
+    if (name.length < 3 || name.length > 80 || !/\p{L}/u.test(name)) throw failWith(400, 'Аты-жөніңізді толық жазыңыз (3–80 әріп).');
+    if (!link.retakes && (await get('SELECT id FROM link_quiz_runs WHERE test_id = ? AND participant = ? LIMIT 1', link.test_id, participant))) {
+      throw failWith(409, 'Сіз бұл Quiz-ді тапсырып қойдыңыз. Организатор қайта тапсыруға рұқсат бермеген.', { reason: 'done' });
+    }
+    if (tooManyStarts(req.ip)) throw failWith(429, 'Тым көп сұраныс. Бірнеше минуттан кейін қайталаңыз.');
+    const version = await currentVersion(link.test_id);
+    const ids = version ? quizSteps(version.test).map((x) => x.q.id) : [];
+    if (!ids.length) throw failWith(403, 'Бұл Quiz-де әзірге сұрақ жоқ.', { reason: 'empty' });
+    // The unique index on unfinished runs makes a second start at the same moment a no-op.
+    await run(
+      `INSERT OR IGNORE INTO link_quiz_runs (test_id, version_id, participant, name, test_title, question_ids, queue, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      link.test_id, version.id, participant, name, version.test.title, JSON.stringify(ids), JSON.stringify(ids), ids.length,
+    );
+    res.json(await linkRunView(await openQuizRun(link.test_id, participant)));
+  }),
+);
+
+/** The answer to the current question of this browser's run. */
+publicLinksRouter.post(
+  '/:slug/quiz/answer',
+  wrap(async (req, res) => {
+    const link = await quizLink(req.params.slug);
+    const participant = parseCookies(req.headers.cookie)[PARTICIPANT];
+    const row = participant
+      ? await get('SELECT * FROM link_quiz_runs WHERE id = ? AND test_id = ? AND participant = ?', Number(req.body?.run_id) || 0, link.test_id, participant)
+      : null;
+    if (!row) throw failWith(404, 'Quiz тапсыру табылмады. Сілтемені қайта ашыңыз.');
+    const test = await versionById(row.version_id);
+    if (!test) throw failWith(404, 'Quiz табылмады. Сілтемені қайта ашыңыз.');
+    const out = await applyAnswer(readRun(row), quizFound(test), req.body || {}, 'link_quiz_runs');
+    res.json({ ...out, state: { ...out.state, name: row.name } });
+  }),
+);
+
 publicLinksRouter.use((err, _req, res, next) => {
   if (!err.status) return next(err);
   res.status(err.status).json({ error: err.message, ...err.extra });
@@ -412,6 +523,24 @@ orgLinksRouter.get(
        FROM test_links l JOIN tests x ON x.id = l.test_id AND COALESCE(x.format, 'classic') <> 'quiz' ORDER BY x.topic_id, x.position, x.id`,
     );
     res.json({ links: rows.map((l) => ({ ...linkView(l), title: l.title, finished: l.finished, unfinished: l.unfinished })) });
+  }),
+);
+
+/** One test's link (classic or quiz), for the link card in the editor. */
+orgLinksRouter.get(
+  '/:testId(\\d+)',
+  wrap(async (req, res) => {
+    await ensureLinks();
+    const l = await get(
+      `SELECT l.*, x.title, COALESCE(x.format, 'classic') AS format,
+              CASE WHEN COALESCE(x.format, 'classic') = 'quiz'
+                THEN (SELECT COUNT(*) FROM link_quiz_runs r WHERE r.test_id = l.test_id AND r.finished_at IS NOT NULL)
+                ELSE (SELECT COUNT(*) FROM link_attempts a WHERE a.test_id = l.test_id AND a.kind = 'test' AND a.finished_at IS NOT NULL) END AS finished
+       FROM test_links l JOIN tests x ON x.id = l.test_id WHERE l.test_id = ?`,
+      Number(req.params.testId),
+    );
+    if (!l) throw failWith(404, 'Тест табылмады.');
+    res.json({ ...linkView(l), title: l.title, format: l.format, finished: l.finished });
   }),
 );
 

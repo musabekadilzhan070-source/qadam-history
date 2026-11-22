@@ -114,7 +114,8 @@ test('every classic test gets one quiz copy: same questions, answers, contexts, 
     assert.equal(q.publisher, src.publisher);
     assert.equal(q.question_count, src.question_count);
     assert.equal(q.format, 'quiz');
-    assert.equal(q.share_id, null, 'a quiz is never sent as a link');
+    assert.match(q.share_id, /^[0-9a-f]{16}$/, 'a quiz has its own link, like a classic test');
+    assert.notEqual(q.share_id, src.share_id);
   }
   const quiz = after.quizzes.find((x) => x.source_test_id === classic.id);
   quizId = quiz.id;
@@ -302,4 +303,69 @@ test('the organizer makes a new quiz by hand and puts it in a book apart from th
   // Hiding works as for a classic test.
   await org('POST', `/api/org/tests/${made.body.id}/hide`);
   assert.equal((await call('GET', `/api/quizzes/${made.body.id}`)).status, 404);
+});
+
+test('a quiz sent as a link: a name instead of an account, wrong questions come back, progress kept, results for the organizer', async () => {
+  const state = (await org('GET', '/api/org/state')).body;
+  const quiz = state.quizzes.find((x) => x.id === quizId);
+  const slug = quiz.share_id;
+  const full = (await org('GET', `/api/org/tests/${quizId}`)).body;
+  const guest = client();
+  // Closed until the organizer turns the link on.
+  let info = (await guest('GET', `/api/link/${slug}`)).body;
+  assert.equal(info.format, 'quiz');
+  assert.equal(info.open, false);
+  assert.equal((await guest('POST', `/api/link/${slug}/quiz/start`, { name: 'Әлихан Нұрлан' })).status, 403);
+  const card = (await org('GET', `/api/org/links/${quizId}`)).body;
+  assert.equal(card.format, 'quiz');
+  assert.equal((await org('PUT', `/api/org/links/${quizId}`, { enabled: true, retakes: false })).status, 200);
+  info = (await guest('GET', `/api/link/${slug}`)).body;
+  assert.equal(info.open, true);
+  assert.equal(info.question_count, 7);
+  assert.equal(info.run, null);
+  // The classic player never opens a quiz, and the quiz routes never open a classic test.
+  assert.equal((await guest('POST', `/api/link/${slug}/start`, { name: 'Әлихан Нұрлан' })).status, 404);
+  const classicSlug = state.tests.find((x) => x.id === classic.id).share_id;
+  assert.equal((await guest('POST', `/api/link/${classicSlug}/quiz/start`, { name: 'Әлихан Нұрлан' })).status, 404);
+  assert.equal((await guest('POST', `/api/link/${slug}/quiz/start`, { name: 'Ә' })).status, 400, 'a full name is needed');
+
+  let s = (await guest('POST', `/api/link/${slug}/quiz/start`, { name: 'Әлихан Нұрлан' })).body;
+  assert.equal(s.name, 'Әлихан Нұрлан');
+  assert.equal(s.total, 7);
+  // First question wrong: it comes back after the others.
+  const firstId = s.question.id;
+  let r = await guest('POST', `/api/link/${slug}/quiz/answer`, { run_id: s.run_id, question_id: s.question.id, version: s.version, answer: wrongAnswer(s.question, full) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.correct, false);
+  s = r.body.state;
+  // A reload continues the same run where it stopped.
+  info = (await guest('GET', `/api/link/${slug}`)).body;
+  assert.equal(info.run.run_id, s.run_id);
+  assert.equal(info.run.question.id, s.question.id);
+  // Another browser cannot answer in this run.
+  const other = client();
+  assert.equal((await other('POST', `/api/link/${slug}/quiz/answer`, { run_id: s.run_id, question_id: s.question.id, version: s.version, answer: rightAnswer(s.question, full) })).status, 404);
+  const seen = [];
+  while (s.phase !== 'done') {
+    seen.push(s.question.id);
+    r = await guest('POST', `/api/link/${slug}/quiz/answer`, { run_id: s.run_id, question_id: s.question.id, version: s.version, answer: rightAnswer(s.question, full) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    s = r.body.state;
+  }
+  assert.equal(seen.at(-1), firstId, 'the wrong question came back at the end');
+  assert.equal(s.first_correct, 6);
+  assert.equal(s.wrong_answers, 1);
+  assert.equal(s.finished, true);
+  // Retakes are off: the same browser cannot start again.
+  info = (await guest('GET', `/api/link/${slug}`)).body;
+  assert.equal(info.already_done, true);
+  assert.equal((await guest('POST', `/api/link/${slug}/quiz/start`, { name: 'Әлихан Нұрлан' })).status, 409);
+  // The organizer sees the run with the typed name, apart from the classic link results.
+  const runs = (await org('GET', `/api/org/quizzes/results?test=${quizId}`)).body.runs;
+  const mine = runs.find((x) => x.via === 'link' && x.run_id === s.run_id);
+  assert.equal(mine.user.display_name, 'Әлихан Нұрлан');
+  assert.equal(mine.finished, true);
+  assert.equal(mine.wrong_answers, 1);
+  const classicLinks = (await org('GET', '/api/org/links/results')).body.results;
+  assert.ok(!classicLinks.some((x) => x.test_id === quizId));
 });

@@ -61,29 +61,34 @@ export async function copyLink(testId, shareId, enabled) {
 
 // ─── The link card in the test editor ─────────────────────────────
 function cardHtml(link, dirty) {
+  const quiz = link.format === 'quiz';
   return `
     <section class="o-card o-link-card">
       <div class="o-card-head"><div><h2>Сілтеме арқылы тапсыру</h2>
-        <p class="o-muted">Сілтемені WhatsApp немесе басқа мессенджер арқылы жіберіңіз: оқушы тіркелмей, аты-жөнін жазып тапсырады. Сілтеме тұрақты, барлық оқушыға бір сілтеме жетеді.</p></div>
+        <p class="o-muted">Сілтемені WhatsApp немесе басқа мессенджер арқылы жіберіңіз: оқушы тіркелмей, аты-жөнін жазып тапсырады. Сілтеме тұрақты, барлық оқушыға бір сілтеме жетеді.${quiz ? ' Оқушы Quiz ойынын ойнайды: қате сұрақтар барлығы дұрыс болғанша соңында қайта беріледі.' : ''}</p></div>
         ${linkBadge(link)}</div>
       <div class="o-link-row">
         <input class="o-link-input" readonly value="${esc(linkUrl(link.share_id))}" aria-label="Тест сілтемесі" />
         <button type="button" class="btn btn-sm" data-link-act="copy">Сілтемені көшіру</button>
-        <a class="btn btn-ghost btn-sm" href="${esc(link.path)}" target="_blank" rel="noopener">Тестті ашу</a>
-        <a class="btn btn-ghost btn-sm" href="/organizer/links?test=${link.test_id}" data-link>Нәтижелерді көру${link.finished ? ` (${link.finished})` : ''}</a>
+        <a class="btn btn-ghost btn-sm" href="${esc(link.path)}" target="_blank" rel="noopener">${quiz ? 'Quiz-ді ашу' : 'Тестті ашу'}</a>
+        <a class="btn btn-ghost btn-sm" href="${quiz ? `/organizer/quiz-results?test=${link.test_id}` : `/organizer/links?test=${link.test_id}`}" data-link>Нәтижелерді көру${link.finished ? ` (${link.finished})` : ''}</a>
       </div>
       ${dirty ? '<p class="o-warn">Сілтеме тесттің сақталған нұсқасын береді. Өзгерістерді алдымен «Сақтау» батырмасымен сақтаңыз.</p>' : '<p class="o-muted o-link-note">Сілтеме тесттің «Сақтау» басылған соңғы нұсқасын береді (жариялау міндетті емес). Тапсырып жатқан оқушы өз нұсқасы бойынша бағаланады.</p>'}
       <div class="o-flags o-link-flags">
         <label class="o-toggle"><input type="checkbox" data-link-field="enabled" ${link.enabled ? 'checked' : ''} /><span></span>Сілтеме арқылы тапсыру қосулы</label>
         <label class="o-toggle"><input type="checkbox" data-link-field="retakes" ${link.retakes ? 'checked' : ''} /><span></span>Қайта тапсыруға рұқсат беру</label>
-        <label class="o-toggle"><input type="checkbox" data-link-field="show_result" ${link.show_result ? 'checked' : ''} /><span></span>Соңында оқушыға нәтижесін көрсету</label>
-        <label class="o-toggle"><input type="checkbox" data-link-field="show_answers" ${link.show_answers ? 'checked' : ''} ${link.show_result ? '' : 'disabled'} /><span></span>Соңында дұрыс жауаптарды да көрсету (өшірулі болса, оқушы тек өз жауабының дұрыс-қатесін көреді)</label>
+        ${
+          quiz
+            ? ''
+            : `<label class="o-toggle"><input type="checkbox" data-link-field="show_result" ${link.show_result ? 'checked' : ''} /><span></span>Соңында оқушыға нәтижесін көрсету</label>
+        <label class="o-toggle"><input type="checkbox" data-link-field="show_answers" ${link.show_answers ? 'checked' : ''} ${link.show_result ? '' : 'disabled'} /><span></span>Соңында дұрыс жауаптарды да көрсету (өшірулі болса, оқушы тек өз жауабының дұрыс-қатесін көреді)</label>`
+        }
       </div>
       <div class="o-grid-2">
         <label class="o-field"><span class="o-label">Басталу уақыты (міндетті емес)</span><input type="datetime-local" data-link-field="opens_at" value="${toLocal(link.opens_at)}" /></label>
         <label class="o-field"><span class="o-label">Аяқталу уақыты (міндетті емес)</span><input type="datetime-local" data-link-field="closes_at" value="${toLocal(link.closes_at)}" /></label>
       </div>
-      <p class="o-muted o-link-note">Мерзім қойылмаса, тест сіз сілтемені өшіргенше ашық тұрады. Уақыт шектеуі жоғарыдағы «Тест уақыты» баптауынан алынады. Бұл баптаулар бірден сақталады.</p>
+      <p class="o-muted o-link-note">${quiz ? 'Мерзім қойылмаса, Quiz сіз сілтемені өшіргенше ашық тұрады. Quiz-де уақыт шектелмейді, әр сұрақтан кейін дұрыс жауап көрсетіледі. Бұл баптаулар бірден сақталады.' : 'Мерзім қойылмаса, тест сіз сілтемені өшіргенше ашық тұрады. Уақыт шектеуі жоғарыдағы «Тест уақыты» баптауынан алынады. Бұл баптаулар бірден сақталады.'}</p>
     </section>`;
 }
 
@@ -94,8 +99,7 @@ function cardHtml(link, dirty) {
 export async function mountLinkCard(holder, testId, cache, { dirty = false } = {}) {
   if (!holder) return;
   if (!cache.link) {
-    const { links } = await org.get('/links');
-    cache.link = links.find((l) => l.test_id === testId) || null;
+    cache.link = await org.get(`/links/${testId}`).catch(() => null);
   }
   if (!cache.link || !holder.isConnected) return;
   holder.innerHTML = cardHtml(cache.link, dirty);
