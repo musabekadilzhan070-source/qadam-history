@@ -2569,42 +2569,148 @@ body.is-guest .shell {
 body.is-guest main {
   padding-bottom: 32px;
 }
+/* ─── Welcome (/welcome): the living ornament ───────────────────────
+   Only this page. Inline SVG with transform/opacity animation; the timeline:
+   card 0–0.55s → ornament drawn 0.25–1.25s → title, text 0.5–0.95s → buttons ~1.05s.
+   Then quiet loops: a red light along the horns, the breathing halo, the backdrop. */
 .welcome {
+  --wl-red: var(--red-line);
+  --wl-gold: #c9a24a;
+  --wl-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
   overflow: hidden;
   max-width: 560px;
   margin: 24px auto 0;
-  padding: 56px 40px 44px;
+  padding: 58px 40px 46px;
   text-align: center;
   color: var(--on-dark);
-  background: var(--black);
+  background: radial-gradient(120% 80% at 50% 0%, #17090b 0%, var(--black) 55%) var(--black);
+  border-color: #1c1c20;
+  box-shadow: 0 24px 60px -24px rgb(61 10 16 / 0.55), var(--shadow);
   isolation: isolate;
+  animation: wl-card 0.6s var(--wl-ease) both;
 }
-.welcome .band {
+.welcome > .band {
   position: absolute;
   inset: 0 0 auto;
   height: 26px;
   color: var(--bordo);
   opacity: 0.6;
 }
-.welcome .emblem {
+/* The band catches a passing light, like thread in the sun. */
+.wl-band-light {
   position: absolute;
-  right: -60px;
-  bottom: -70px;
-  width: 260px;
-  color: var(--red-line);
-  opacity: 0.18;
-  z-index: -1;
+  inset: 0 0 auto;
+  height: 26px;
+  color: var(--wl-red);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 50%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 50%, transparent 100%);
+  -webkit-mask-size: 30% 100%;
+  mask-size: 30% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: -40% 0;
+  mask-position: -40% 0;
+  animation: wl-band 9s linear 1.6s infinite;
 }
-.welcome-mark {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 18px;
-  color: var(--red-line);
-}
-.welcome-mark svg {
+.wl-band-light svg {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: 26px;
+}
+
+/* ─── The ornament ──────────────────────────────────────── */
+.wl-mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 76px;
+  margin: 0 auto 18px;
+}
+.wl-horn {
+  position: relative;
+  width: 84px;
+  height: 60px;
+  overflow: visible;
+}
+.wl-horn path {
+  stroke-width: 2.6;
+}
+.wl-horn-ghost {
+  stroke: var(--bordo);
+  opacity: 0;
+  animation: wl-fade 0.5s ease-out 0.2s forwards;
+}
+.wl-horn-line {
+  stroke: var(--wl-red);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: wl-draw 1s var(--wl-ease) 0.3s forwards;
+}
+/* The light: a short bright stretch running from the stem to each curl. */
+.wl-horn-light {
+  stroke: #ff6a6e;
+  stroke-width: 2.2 !important;
+  stroke-dasharray: 16 120;
+  stroke-dashoffset: 16;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px rgb(199 38 44 / 0.95));
+  animation: wl-run 6.5s cubic-bezier(0.45, 0, 0.2, 1) 0.45s infinite;
+}
+.wl-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190px;
+  height: 190px;
+  margin: -95px 0 0 -95px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(199 38 44 / 0.34) 0%, rgb(110 16 24 / 0.16) 38%, transparent 68%);
+  opacity: 0;
+  transform: scale(0.6);
+  animation:
+    wl-halo-in 0.9s var(--wl-ease) 1.05s forwards,
+    wl-breathe 6.5s ease-in-out 1.95s infinite;
+  pointer-events: none;
+}
+/* Thin rules each side of the ornament, drawn outwards, with a rhombus at the end. */
+.wl-rule {
+  position: relative;
+  width: 72px;
+  height: 10px;
+}
+.wl-rule::before {
+  content: '';
+  position: absolute;
+  inset: 4.5px 10px 4.5px 0;
+  background: linear-gradient(90deg, transparent, var(--bordo) 40%, var(--wl-red));
+  transform: scaleX(0);
+  transform-origin: right;
+  animation: wl-grow 0.7s var(--wl-ease) 0.8s forwards;
+}
+.wl-rule i {
+  position: absolute;
+  right: 0;
+  top: 1px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--wl-red);
+  transform: rotate(45deg) scale(0);
+  animation: wl-pop-in 0.45s var(--wl-ease) 1.15s forwards;
+}
+.wl-rule-l {
+  transform: scaleX(-1);
+}
+
+/* ─── The opening: one after another, not slow ──────────── */
+.wl-in {
+  opacity: 0;
+  transform: translateY(12px);
+  filter: blur(4px);
+  animation: wl-rise 0.6s var(--wl-ease) calc(0.15s + var(--n, 0) * 0.13s) forwards;
 }
 .welcome .eyebrow {
   color: var(--on-dark-2);
@@ -2628,14 +2734,490 @@ body.is-guest main {
   max-width: 320px;
   margin: 0 auto;
 }
+
+/* ─── Buttons ──────────────────────────────────────────── */
+.wl-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    color 0.35s ease;
+}
+.wl-btn > span {
+  position: relative;
+  z-index: 1;
+}
+/* «Кіру»: a lighter red, a warm glow, a small lift and back. */
+.welcome .wl-btn:not(.btn-dark) {
+  box-shadow: 0 6px 20px -10px rgb(199 38 44 / 0.7);
+}
+.welcome .wl-btn:not(.btn-dark)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(105deg, transparent 30%, rgb(255 255 255 / 0.22) 50%, transparent 70%);
+  transform: translateX(-120%);
+}
+/* «Тіркелу»: a red light rises in the border, the inside warms up. */
 .welcome .btn-dark {
   background: transparent;
   border: 1.5px solid #4a4a52;
   color: var(--on-dark);
 }
-.welcome .btn-dark:hover {
-  border-color: var(--on-dark);
+.welcome .btn-dark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(120% 140% at 50% 120%, rgb(199 38 44 / 0.28), rgb(110 16 24 / 0.12) 55%, transparent 80%);
+  opacity: 0;
+  transition: opacity 0.45s ease;
 }
+@media (hover: hover) {
+  .welcome .wl-btn:not(.btn-dark):hover {
+    background: #c91f29;
+    box-shadow:
+      0 0 0 1px rgb(255 120 120 / 0.18) inset,
+      0 10px 32px -8px rgb(199 38 44 / 0.75),
+      0 0 22px rgb(199 38 44 / 0.35);
+    animation: wl-lift 0.5s var(--wl-ease);
+  }
+  .welcome .wl-btn:not(.btn-dark):hover::after {
+    transform: translateX(120%);
+    transition: transform 0.75s ease;
+  }
+  .welcome .btn-dark:hover {
+    border-color: var(--wl-red);
+    box-shadow:
+      0 0 0 1px rgb(199 38 44 / 0.25),
+      0 0 18px rgb(199 38 44 / 0.35),
+      0 0 14px rgb(199 38 44 / 0.18) inset;
+  }
+  .welcome .btn-dark:hover::before {
+    opacity: 1;
+  }
+}
+.welcome .wl-btn:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 3px;
+}
+/* Touch: the button gives under the finger, and a ripple spreads from the touch. */
+.welcome .wl-btn:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
+.wl-ripple {
+  position: absolute;
+  z-index: 0;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.4), rgb(199 38 44 / 0.25) 60%, transparent 70%);
+  pointer-events: none;
+  animation: wl-ripple 0.65s ease-out forwards;
+}
+
+/* ─── The backdrop ─────────────────────────────────────── */
+.wl-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  animation: wl-fade 1.4s ease-out 0.35s forwards;
+}
+.wl-glow {
+  position: absolute;
+  left: 50%;
+  top: -30%;
+  width: 140%;
+  height: 90%;
+  margin-left: -70%;
+  background: radial-gradient(closest-side, rgb(110 16 24 / 0.32), transparent);
+  animation: wl-breathe 9s ease-in-out infinite;
+}
+.wl-map {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 106%;
+  margin-left: -53%;
+  color: var(--wl-red);
+  opacity: 0.2;
+  animation: wl-drift 26s ease-in-out infinite alternate;
+}
+.wl-map-land {
+  stroke-width: 0.7;
+  stroke-dasharray: 0.45 0.7;
+}
+.wl-map-water {
+  stroke-width: 0.6;
+  opacity: 0.8;
+}
+.wl-map-route {
+  stroke: var(--wl-gold);
+  stroke-width: 0.7;
+  opacity: 0.9;
+  animation: wl-route 14s linear infinite;
+}
+.wl-map-towns circle {
+  fill: var(--wl-gold);
+  stroke: none;
+  animation: wl-twinkle 4.5s ease-in-out infinite;
+}
+.wl-map-towns circle:nth-child(2) {
+  animation-delay: 1.5s;
+}
+.wl-map-towns circle:nth-child(3) {
+  animation-delay: 3s;
+}
+.wl-rosette {
+  position: absolute;
+  right: -90px;
+  bottom: -90px;
+  width: 300px;
+  height: 300px;
+  color: var(--wl-red);
+  opacity: 0.1;
+  animation: wl-spin 140s linear infinite;
+}
+.wl-script {
+  position: absolute;
+  left: -14px;
+  top: 34%;
+  width: 150px;
+  color: var(--on-dark);
+  opacity: 0.07;
+  transform: rotate(-8deg);
+}
+.wl-script path {
+  stroke-width: 0.9;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: wl-write 12s ease-in-out calc(var(--i) * 0.9s + 1s) infinite;
+}
+.wl-signs svg {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 22px;
+  height: 22px;
+  color: var(--on-dark-3);
+  opacity: 0;
+  animation: wl-sign 11s ease-in-out var(--d) infinite;
+}
+.wl-sparks i {
+  position: absolute;
+  left: var(--x);
+  bottom: -10px;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--wl-red);
+  box-shadow: 0 0 6px 1px rgb(199 38 44 / 0.7);
+  opacity: 0;
+  animation: wl-spark var(--t) linear var(--d) infinite;
+}
+.wl-sparks i.is-gold {
+  background: var(--wl-gold);
+  box-shadow: 0 0 6px 1px rgb(201 162 74 / 0.6);
+}
+/* A dark-red light travels slowly round the edge of the card. */
+.wl-edge {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  opacity: 0;
+  animation: wl-fade 1s ease-out 1.3s forwards;
+}
+.wl-edge i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 280deg, rgb(110 16 24 / 0.6) 320deg, var(--wl-red) 350deg, transparent 360deg);
+  animation: wl-spin 12s linear infinite;
+}
+
+/* ─── Keyframes ────────────────────────────────────────── */
+@keyframes wl-card {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+}
+@keyframes wl-fade {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes wl-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes wl-run {
+  0% {
+    stroke-dashoffset: 16;
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  26% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+  30%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+@keyframes wl-halo-in {
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  to {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+}
+@keyframes wl-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.07);
+  }
+}
+@keyframes wl-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes wl-pop-in {
+  to {
+    transform: rotate(45deg) scale(1);
+  }
+}
+@keyframes wl-rise {
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes wl-lift {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.035);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes wl-ripple {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(26);
+    opacity: 0;
+  }
+}
+@keyframes wl-band {
+  0% {
+    -webkit-mask-position: -40% 0;
+    mask-position: -40% 0;
+  }
+  40%,
+  100% {
+    -webkit-mask-position: 140% 0;
+    mask-position: 140% 0;
+  }
+}
+@keyframes wl-drift {
+  from {
+    transform: translate(-6px, 0) scale(1);
+  }
+  to {
+    transform: translate(6px, -8px) scale(1.04);
+  }
+}
+@keyframes wl-route {
+  to {
+    stroke-dashoffset: -70;
+  }
+}
+@keyframes wl-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes wl-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes wl-write {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  45%,
+  70% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  90%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes wl-sign {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+  35%,
+  60% {
+    opacity: 0.22;
+    transform: none;
+  }
+}
+@keyframes wl-spark {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  12% {
+    opacity: 0.85;
+  }
+  70% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(18px, -420px);
+  }
+}
+
+@media (max-width: 760px) {
+  .welcome {
+    margin-top: 8px;
+    padding: 46px 22px 34px;
+  }
+  .welcome h1 {
+    font-size: 21px;
+  }
+  .wl-mark {
+    height: 66px;
+    gap: 10px;
+  }
+  .wl-horn {
+    width: 72px;
+    height: 52px;
+  }
+  .wl-rule {
+    width: 46px;
+  }
+  .wl-map {
+    top: 52%;
+    width: 150%;
+    margin-left: -75%;
+  }
+  .wl-rosette {
+    width: 220px;
+    height: 220px;
+    right: -80px;
+    bottom: -70px;
+  }
+  /* Fewer moving things on a phone: half of the sparks and signs. */
+  .wl-sparks i:nth-child(2n),
+  .wl-signs svg:nth-child(2n) {
+    display: none;
+  }
+}
+
+/* Less motion asked for: the final picture at once, nothing moves. */
+@media (prefers-reduced-motion: reduce) {
+  .welcome,
+  .welcome *,
+  .welcome *::before,
+  .welcome *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .wl-in,
+  .wl-bg,
+  .wl-horn-ghost,
+  .wl-edge {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  .wl-horn-line {
+    stroke-dashoffset: 0;
+  }
+  .wl-horn-light,
+  .wl-band-light,
+  .wl-sparks,
+  .wl-signs,
+  .wl-edge {
+    display: none;
+  }
+  .wl-halo {
+    opacity: 0.55;
+    transform: none;
+  }
+  .wl-rule::before {
+    transform: none;
+  }
+  .wl-rule i {
+    transform: rotate(45deg);
+  }
+  .wl-script path {
+    stroke-dashoffset: 0;
+  }
+}
+
 .auth-back {
   display: inline-block;
   margin-bottom: 16px;
@@ -2987,13 +3569,6 @@ body.is-guest main {
 }
 
 @media (max-width: 760px) {
-  .welcome {
-    margin-top: 8px;
-    padding: 44px 22px 34px;
-  }
-  .welcome h1 {
-    font-size: 21px;
-  }
   .match-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
