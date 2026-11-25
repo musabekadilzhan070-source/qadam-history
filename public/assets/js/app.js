@@ -9,6 +9,7 @@ import { homeView } from './views/home.js';
 import { periodsView, periodView, periodBookView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
+import { quizzesView } from './views/quizzes.js';
 import { quizGameView } from './views/quizgame.js';
 import { resultsView, attemptView } from './views/results.js';
 import { reworkView } from './views/rework.js';
@@ -22,8 +23,9 @@ import { welcomeView, loginView, registerView, forgotView, resetView } from './v
 
 const NAV = [
   { key: 'home', href: '/', label: 'Басты бет', short: 'Басты', icon: 'home' },
-  { key: 'periods', href: '/periods', label: 'Тарихи кезеңдер', short: 'Кезеңдер', icon: 'periods' },
+  { key: 'periods', href: '/periods', label: 'Тарихи кезеңдер', short: 'Кезең', icon: 'periods' },
   { key: 'tests', href: '/tests', label: 'Тесттер', short: 'Тесттер', icon: 'tests' },
+  { key: 'quiz', href: '/quiz', label: 'Quiz', short: 'Quiz', icon: 'quiz' },
   { key: 'books', href: '/books', label: 'Кітаптар', short: 'Кітап', icon: 'materials' },
   { key: 'results', href: '/results', label: 'Менің нәтижелерім', short: 'Нәтиже', icon: 'results' },
   { key: 'feedback', href: '/feedback', label: 'Ұсыныстар', short: 'Ұсыныс', icon: 'feedback' },
@@ -38,7 +40,8 @@ const ROUTES = [
   { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
   // Quiz: the game format (its own page, its own progress kept on the server).
-  { re: /^\/quiz\/(\d+)\/?$/, nav: 'periods', view: quizGameView, title: 'Quiz' },
+  { re: /^\/quiz\/?$/, nav: 'quiz', view: quizzesView, title: 'Quiz' },
+  { re: /^\/quiz\/(\d+)\/?$/, nav: 'quiz', view: quizGameView, title: 'Quiz' },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/books\/(\d+)\/?$/, nav: 'books', view: readerView, title: 'Кітап', reader: true },

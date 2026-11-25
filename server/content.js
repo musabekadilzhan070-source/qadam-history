@@ -226,6 +226,20 @@ export async function listTests(userId) {
   return out;
 }
 
+/** Every published quiz, in period and topic order, for the «Quiz» page. */
+export async function listQuizzes(userId) {
+  const snap = await published();
+  const progress = await quizProgress(userId);
+  const out = [];
+  for (const p of snap.periods) {
+    const periodOf = { slug: p.slug, title: p.title, number: p.number };
+    for (const t of snap.topics.filter((tt) => tt.period_id === p.id)) {
+      for (const x of liveQuizzes(snap).filter((xx) => xx.topic_id === t.id)) out.push(quizCard(x, progress, t, periodOf));
+    }
+  }
+  return out;
+}
+
 export async function totals() {
   const snap = await published();
   return {

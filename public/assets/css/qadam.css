@@ -2540,7 +2540,7 @@ main:focus {
     bottom: 0;
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
     background: var(--black);
     border-top: 1px solid #000;
@@ -5233,8 +5233,12 @@ html.reader-full-open body {
   margin-top: auto;
   align-self: flex-start;
 }
+/* The button sits at the bottom of the tile, so a row of tiles has its buttons in one line. */
 .qg-tile > .qg-btn {
-  margin-top: 12px;
+  margin-top: auto;
+}
+.qg-tile > :nth-last-child(2) {
+  margin-bottom: 14px;
 }
 
 /* Buttons of the stage. */
