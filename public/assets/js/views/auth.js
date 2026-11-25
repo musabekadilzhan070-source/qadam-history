@@ -111,7 +111,7 @@ function bindForm(el, { check, send, done }) {
       btn.textContent = label;
     }
   });
-  form.querySelector('input')?.focus();
+  form.querySelector('input')?.focus({ preventScroll: true });
 }
 
 function signedIn(app, user) {

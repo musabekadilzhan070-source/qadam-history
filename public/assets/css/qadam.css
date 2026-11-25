@@ -2026,10 +2026,118 @@ main:focus {
   left: 50%;
   top: 40px;
   width: 70%;
-  aspect-ratio: 200 / 160;
   translate: -50% 0;
   z-index: -1;
   pointer-events: none;
+}
+.lm-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 200 / 160;
+}
+/* A timeline of the four periods under the building, drawn after it. */
+.lm-eras {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 30px;
+  padding: 0;
+  list-style: none;
+}
+.lm-eras::before,
+.lm-eras::after {
+  content: '';
+  position: absolute;
+  left: 12.5%;
+  right: 12.5%;
+  top: 5px;
+  height: 1.5px;
+  background: linear-gradient(90deg, var(--bordo), var(--red-line), var(--bordo));
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: wl-grow 1.1s var(--wl-ease) 2.9s forwards;
+}
+/* A spark running along the timeline now and then. */
+.lm-eras::after {
+  left: 12.5%;
+  right: auto;
+  width: 34px;
+  height: 3px;
+  top: 4px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, #ff6a6e, transparent);
+  transform: none;
+  opacity: 0;
+  animation: lm-era-run 7s ease-in-out 4.6s infinite;
+}
+.lm-eras li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.lm-eras i {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--red-line);
+  background: var(--black);
+  transform: rotate(45deg) scale(0);
+  animation: wl-pop-in 0.45s var(--wl-ease) calc(3.1s + var(--e) * 0.22s) forwards;
+}
+.lm-eras span {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: var(--on-dark-3);
+  opacity: 0;
+  animation: wl-fade 0.6s ease-out calc(3.25s + var(--e) * 0.22s) forwards;
+}
+@keyframes lm-era-run {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+    translate: calc(var(--run, 300px)) 0;
+  }
+  46%,
+  100% {
+    opacity: 0;
+    translate: calc(var(--run, 300px)) 0;
+  }
+}
+/* The building stands in the free space above the timeline and the text (in the flow, so
+   on a phone the text comes under it instead of over it). */
+@media all {
+  .auth-art.is-live {
+    justify-content: flex-start;
+  }
+  .auth-art.is-live .lm-stage {
+    position: relative;
+    left: auto;
+    top: auto;
+    translate: none;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin: 22px 0 18px;
+  }
+  .auth-art.is-live .lm-frame {
+    width: 90%;
+    max-width: 420px;
+  }
+  .lm-eras {
+    --run: calc((100% - 34px) * 0.75);
+  }
 }
 .auth-art .lm-stage .lm {
   position: static;
@@ -2179,9 +2287,17 @@ main:focus {
   }
 }
 @media (max-width: 900px) {
-  .lm-stage {
-    width: 160px;
-    top: 34px;
+  .auth-art.is-live {
+    padding-top: 30px;
+  }
+  .auth-art.is-live .lm-stage {
+    margin: 8px 0 10px;
+  }
+  .auth-art.is-live .lm-frame {
+    width: 170px;
+  }
+  .lm-eras {
+    display: none;
   }
   .lm-bg .wl-sparks i:nth-child(2n) {
     display: none;
@@ -2205,6 +2321,17 @@ main:focus {
   .lm-line {
     stroke-dashoffset: 0;
   }
+  .lm-eras::before,
+  .lm-eras i {
+    transform: rotate(45deg);
+  }
+  .lm-eras::before {
+    transform: none;
+  }
+  .lm-eras span {
+    opacity: 1;
+  }
+  .lm-eras::after,
   .lm-light,
   .auth-art.is-live .wl-sparks {
     display: none;
