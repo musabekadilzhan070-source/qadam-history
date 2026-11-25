@@ -3,6 +3,7 @@ import { esc, formatDuration } from '../util.js';
 import { icon } from '../art.js';
 import { resultHero, reviewList } from './review.js';
 import { bookBox } from '../catalog.js';
+import { checkBadges } from '../badges.js';
 import { unitHtml, bindUnit, unitQuestions, initialAnswers, isAnswered } from '../quiz-player.js';
 
 /** Old /topics/:slug/test links open the topic's first test. */
@@ -211,6 +212,7 @@ export async function quizView(el, [id], app, alive) {
           ${r.saved ? `<div class="notice"><span>Нәтиже сақталды.</span><a class="link-more" href="/results" data-link>Менің нәтижелерім ${icon('arrow')}</a></div>` : ''}
           ${reviewList(r.items)}
         </div>`;
+      if (r.attempt_id) checkBadges();
     },
   });
   await quiz.start();

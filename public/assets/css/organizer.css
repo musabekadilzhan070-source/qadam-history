@@ -2424,3 +2424,79 @@ textarea {
   gap: 12px;
   margin-bottom: 10px;
 }
+
+/* ─── ҰБТ сынақ and cards ─────────────────────────────────────── */
+.o-live-note {
+  margin: 14px 0;
+  align-items: center;
+}
+.o-live-note .icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.o-mock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.o-mock-grid .o-card {
+  margin: 0;
+}
+.o-mock-pool {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.o-mock-pool li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.o-card-kind {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.o-card-kind .icon {
+  width: 18px;
+  height: 18px;
+}
+.o-card-kind-date {
+  color: #8a5a00;
+  background: #fff4dc;
+}
+.o-card-kind-person {
+  color: #1f5a7a;
+  background: #e3f1f8;
+}
+.o-row.is-off {
+  opacity: 0.6;
+}
+.o-cardrow {
+  display: grid;
+  gap: 3px;
+  font-size: 14px;
+}
+.o-cardrow small {
+  font-size: 12.5px;
+}
+.o-cardrow-learned {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ok);
+  font-weight: 700;
+}
+.o-cardrow-learned .icon {
+  width: 13px;
+  height: 13px;
+}

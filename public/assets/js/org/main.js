@@ -15,6 +15,7 @@ import { shelvesView } from './shelves.js';
 import { iconsView } from './icons.js';
 import { siteView } from './site.js';
 import { publishView } from './publish.js';
+import { cardsAdminView, mockAdminView } from './practice.js';
 import { SECTIONS } from './sections.js';
 
 
@@ -28,6 +29,8 @@ const ROUTES = [
   { re: /^\/organizer\/quizzes\/?$/, nav: 'quizzes', view: quizzesView, title: 'Quiz тесттер' },
   { re: /^\/organizer\/quizzes\/(\d+)\/?$/, nav: 'quizzes', view: testEditView, title: 'Quiz' },
   { re: /^\/organizer\/quiz-results\/?$/, nav: 'quiz-results', view: quizResultsView, title: 'Quiz нәтижелері' },
+  { re: /^\/organizer\/ubt\/?$/, nav: 'ubt', view: mockAdminView, title: 'ҰБТ сынақ' },
+  { re: /^\/organizer\/cards\/?$/, nav: 'cards', view: cardsAdminView, title: 'Даталар мен тұлғалар карточкалары' },
   { re: /^\/organizer\/links\/?$/, nav: 'links', view: linksView, title: 'Сілтеме арқылы тапсырылған тесттер' },
   { re: /^\/organizer\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
   { re: /^\/organizer\/books\/(new|\d+)\/?$/, nav: 'books', view: bookEditView, title: 'Кітап' },

@@ -4,6 +4,8 @@ export const SECTIONS = [
   { key: 'tests', href: '/organizer/tests', label: 'Тесттер', icon: 'tests' },
   { key: 'quizzes', href: '/organizer/quizzes', label: 'Quiz тесттер', icon: 'quiz' },
   { key: 'quiz-results', href: '/organizer/quiz-results', label: 'Quiz нәтижелері', icon: 'results' },
+  { key: 'ubt', href: '/organizer/ubt', label: 'ҰБТ сынақ', icon: 'exam' },
+  { key: 'cards', href: '/organizer/cards', label: 'Карточкалар', icon: 'cards' },
   { key: 'links', href: '/organizer/links', label: 'Сілтеме арқылы тапсырылған тесттер', icon: 'results' },
   { key: 'books', href: '/organizer/books', label: 'Кітаптар', icon: 'materials' },
   { key: 'shelves', href: '/organizer/period-books', label: 'Кезең кітаптары', icon: 'book' },

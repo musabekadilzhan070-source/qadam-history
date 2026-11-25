@@ -17,6 +17,7 @@ import { latin } from './latin.js';
 import { orgLinksRouter, ensureLinks } from './links.js';
 import { orgShelvesRouter } from './shelves.js';
 import { orgQuizRouter } from './quizgame.js';
+import { orgPracticeRouter } from './practice.js';
 
 // Organizer cabinet API. Everything except /login needs the organizer session cookie.
 // The PIN lives only in the ORGANIZER_PIN environment variable and is checked here.
@@ -836,6 +837,7 @@ orgRouter.use('/books', orgBooksRouter);
 orgRouter.use('/links', orgLinksRouter);
 orgRouter.use('/period-books', orgShelvesRouter);
 orgRouter.use('/quizzes', orgQuizRouter);
+orgRouter.use('/practice', orgPracticeRouter);
 
 // ─── Question import and export (layout in transfer.js) ───────────
 const rawBody = express.raw({ type: () => true, limit: UPLOAD_LIMIT });

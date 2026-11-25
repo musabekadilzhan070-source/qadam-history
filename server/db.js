@@ -438,6 +438,67 @@ CREATE TABLE IF NOT EXISTS data_backups (
 );
 `;
 
+// ҰБТ-style mock exams, date and person cards, and achievement badges.
+const SCHEMA_V7 = `
+-- One mock exam a student sat: the questions handed out (mixed from the classic tests of every
+-- period), the answers, the score and the score per period. nonce makes a double submit harmless.
+CREATE TABLE IF NOT EXISTS mock_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nonce TEXT NOT NULL UNIQUE,
+  question_ids TEXT NOT NULL DEFAULT '[]',
+  answers TEXT NOT NULL DEFAULT '{}',
+  correct INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  score REAL NOT NULL DEFAULT 0,
+  max_score REAL NOT NULL DEFAULT 0,
+  by_period TEXT NOT NULL DEFAULT '[]',
+  duration_sec INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mock_runs_user ON mock_runs(user_id, id);
+-- Cards to learn by heart: kind 'date' (a date and its event) or 'person' (a name and who they were).
+-- period_number ties a card to a period (1–4) without depending on the period's row id.
+CREATE TABLE IF NOT EXISTS fact_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL DEFAULT 'date',
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  period_number INTEGER,
+  position INTEGER NOT NULL DEFAULT 0,
+  published INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- A student's place in the Leitner boxes for one card: box 0 = new, 5 = learned; due_at = next review.
+CREATE TABLE IF NOT EXISTS card_progress (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_id INTEGER NOT NULL REFERENCES fact_cards(id) ON DELETE CASCADE,
+  box INTEGER NOT NULL DEFAULT 0,
+  due_at TEXT NOT NULL DEFAULT (datetime('now')),
+  right_count INTEGER NOT NULL DEFAULT 0,
+  wrong_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, card_id)
+);
+-- Days a student worked with the cards (for the streak badges).
+CREATE TABLE IF NOT EXISTS card_days (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  reviews INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+-- Badges a student has earned, with the moment (kept even if a rule changes later).
+CREATE TABLE IF NOT EXISTS user_badges (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  badge TEXT NOT NULL,
+  earned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  seen INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, badge)
+);
+`;
+
 const COLUMNS = [
   ['topics', 'published', 'INTEGER NOT NULL DEFAULT 1'],
   ['topics', 'image_id', 'INTEGER'],
@@ -515,6 +576,7 @@ export async function migrate() {
   await db.executeMultiple(SCHEMA_V4);
   await db.executeMultiple(SCHEMA_V5);
   await db.executeMultiple(SCHEMA_V6);
+  await db.executeMultiple(SCHEMA_V7);
   const firstReworkRun = !(await all('PRAGMA table_info(link_attempts)')).some((c) => c.name === 'kind');
   await addMissingColumns();
   await db.execute('CREATE INDEX IF NOT EXISTS idx_link_attempts_root ON link_attempts(root_id)');

@@ -10,6 +10,9 @@ import { periodsView, periodView, periodBookView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
 import { testsView } from './views/tests.js';
 import { quizzesView } from './views/quizzes.js';
+import { ubtView, ubtRunView } from './views/ubt.js';
+import { cardsView } from './views/cards.js';
+import { achievementsView } from './views/achievements.js';
 import { quizGameView } from './views/quizgame.js';
 import { resultsView, attemptView } from './views/results.js';
 import { reworkView } from './views/rework.js';
@@ -26,11 +29,16 @@ const NAV = [
   { key: 'periods', href: '/periods', label: 'Тарихи кезеңдер', short: 'Кезең', icon: 'periods' },
   { key: 'tests', href: '/tests', label: 'Тесттер', short: 'Тесттер', icon: 'tests' },
   { key: 'quiz', href: '/quiz', label: 'Quiz', short: 'Quiz', icon: 'quiz' },
+  { key: 'ubt', href: '/ubt', label: 'ҰБТ сынақ', short: 'ҰБТ', icon: 'exam' },
+  { key: 'cards', href: '/cards', label: 'Карточкалар', short: 'Карточка', icon: 'cards' },
   { key: 'books', href: '/books', label: 'Кітаптар', short: 'Кітап', icon: 'materials' },
   { key: 'results', href: '/results', label: 'Менің нәтижелерім', short: 'Нәтиже', icon: 'results' },
   { key: 'feedback', href: '/feedback', label: 'Ұсыныстар', short: 'Ұсыныс', icon: 'feedback' },
   { key: 'profile', href: '/profile', label: 'Профиль', short: 'Профиль', icon: 'profile' },
 ];
+
+// On a phone the tab bar keeps these; the rest open from «Тағы».
+const TAB_KEYS = ['home', 'tests', 'quiz', 'ubt'];
 
 const ROUTES = [
   { re: /^\/$/, nav: 'home', view: homeView, title: '' },
@@ -41,6 +49,10 @@ const ROUTES = [
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
   // Quiz: the game format (its own page, its own progress kept on the server).
   { re: /^\/quiz\/?$/, nav: 'quiz', view: quizzesView, title: 'Quiz' },
+  { re: /^\/ubt\/?$/, nav: 'ubt', view: ubtView, title: 'ҰБТ сынақ' },
+  { re: /^\/ubt\/(\d+)\/?$/, nav: 'ubt', view: ubtRunView, title: 'ҰБТ сынақ нәтижесі' },
+  { re: /^\/cards\/?$/, nav: 'cards', view: cardsView, title: 'Карточкалар' },
+  { re: /^\/achievements\/?$/, nav: 'profile', view: achievementsView, title: 'Жетістіктер' },
   { re: /^\/quiz\/(\d+)\/?$/, nav: 'quiz', view: quizGameView, title: 'Quiz' },
   { re: /^\/tests\/?$/, nav: 'tests', view: testsView, title: 'Тесттер' },
   { re: /^\/books\/?$/, nav: 'books', view: booksView, title: 'Кітаптар' },
@@ -120,10 +132,45 @@ function renderNav(active) {
   document.getElementById('rail-nav').innerHTML = NAV.map(
     (n) => `<a class="rail-link" href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''}>${site.navIcon(n.key, n.icon)}<span>${label(n)}</span>${dot(n)}</a>`,
   ).join('');
-  document.getElementById('tabbar').innerHTML = NAV.map(
-    (n) => `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${label(n)}">${site.navIcon(n.key, n.icon)}<span>${short(n)}</span>${dot(n)}</a>`,
-  ).join('');
+  // Phone: four tabs and «Тағы», which opens every section (the current one is marked there).
+  const tab = (n) =>
+    `<a href="${n.href}" data-link ${n.key === active ? 'aria-current="page"' : ''} aria-label="${label(n)}">${site.navIcon(n.key, n.icon)}<span>${short(n)}</span>${dot(n)}</a>`;
+  const inMore = !TAB_KEYS.includes(active) && NAV.some((n) => n.key === active);
+  const moreDot = unseenReplies ? `<i class="nav-dot" aria-label="${unseenReplies} жаңа жауап">${unseenReplies}</i>` : '';
+  document.getElementById('tabbar').innerHTML = `
+    ${NAV.filter((n) => TAB_KEYS.includes(n.key)).map(tab).join('')}
+    <button type="button" class="tab-more" aria-haspopup="dialog" aria-expanded="false" ${inMore ? 'aria-current="page"' : ''}>${icon('more')}<span>Тағы</span>${moreDot}</button>
+    <div class="tab-sheet" hidden>
+      <p class="tab-sheet-title">Бөлімдер</p>
+      <div class="tab-sheet-grid">${NAV.map(tab).join('')}</div>
+    </div>`;
 }
+
+// «Тағы»: the sheet of every section opens above the tab bar; a tap outside or a link closes it.
+document.getElementById('tabbar').addEventListener('click', (e) => {
+  const bar = e.currentTarget;
+  const sheet = bar.querySelector('.tab-sheet');
+  const btn = bar.querySelector('.tab-more');
+  if (e.target.closest('.tab-more')) {
+    const open = sheet.hidden;
+    sheet.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('sheet-open', open);
+    return;
+  }
+  if (e.target.closest('a')) {
+    sheet.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('sheet-open');
+  }
+});
+document.addEventListener('click', (e) => {
+  const sheet = document.querySelector('.tab-sheet');
+  if (!sheet || sheet.hidden || e.target.closest('#tabbar')) return;
+  sheet.hidden = true;
+  document.querySelector('.tab-more')?.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('sheet-open');
+});
 
 function renderUserSlot() {
   const slot = document.getElementById('user-slot');
