@@ -1,6 +1,6 @@
 import { api } from './api.js';
 import { esc } from './util.js';
-import { icon, periodEmblem } from './art.js';
+import { icon, periodEmblem, livingEmblem } from './art.js';
 import { emblemSvg } from './emblems.js';
 
 // Texts the organizer can change. The defaults are the site's original wording, so an
@@ -100,9 +100,9 @@ export const site = {
     return renderIcon(site.icons[`nav.${key}`], fallback);
   },
   /** Period emblem; an override keeps the emblem's place and size on the card. */
-  emblem(number, cls = 'emblem') {
+  emblem(number, cls = 'emblem', live = false) {
     const own = site.icons[`period.${number}`];
-    if (!own) return periodEmblem(number, cls);
+    if (!own) return live ? livingEmblem(number, cls) : periodEmblem(number, cls);
     return renderIcon({ ...own, size: null }, null, cls);
   },
 };

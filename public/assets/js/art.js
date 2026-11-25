@@ -82,11 +82,20 @@ const EMBLEMS = {
 
 export const periodEmblem = (n, cls = 'emblem') => svg('0 0 200 160', EMBLEMS[n] || EMBLEMS[1], cls);
 
+// The card version: every line measured as 100 so CSS can draw it, plus a copy of the lines
+// that a red light runs along (see .pe-live in qadam.css). Same picture, same place.
+const measured = (body) => body.replace(/<(path|circle) /g, '<$1 pathLength="100" ');
+export const livingEmblem = (n, cls = 'emblem') => {
+  const body = measured(EMBLEMS[n] || EMBLEMS[1]);
+  return svg('0 0 200 160', `${body}<g class="pe-light">${body}</g>`, `${cls} pe-live pe-${EMBLEMS[n] ? n : 1}`);
+};
+
 export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
 
 // Banner: fragment of a map of the Kazakh Khanate's Syr Darya towns with the Yasawi mausoleum.
 export const bannerArt = () => `
 <svg class="banner-art" viewBox="0 0 640 380" aria-hidden="true" focusable="false" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <defs><radialGradient id="banner-glow-fill"><stop offset="0" stop-color="#c7262c" stop-opacity=".28"/><stop offset="1" stop-color="#c7262c" stop-opacity="0"/></radialGradient></defs>
   <g class="map-grid" stroke-width="1">
     <path d="M40 60c180-30 400-30 600 0M20 140c200-28 420-28 620 0M0 220c210-26 430-26 640 0M0 300c210-24 430-24 640 0"/>
     <path d="M120 0c-20 120-20 260 0 380M260 0c-12 120-12 260 0 380M400 0c-4 120-4 260 0 380M540 0c8 120 8 260 0 380"/>
@@ -95,19 +104,30 @@ export const bannerArt = () => `
   <g class="map-towns">
     <circle cx="140" cy="270" r="4"/><circle cx="268" cy="210" r="4"/><circle cx="352" cy="140" r="4"/><circle cx="458" cy="104" r="4"/>
   </g>
+  <g class="map-rings" stroke-width="1.4">
+    <circle cx="140" cy="270" r="4" style="--t:0"/><circle cx="268" cy="210" r="4" style="--t:1"/><circle cx="352" cy="140" r="4" style="--t:2"/><circle cx="458" cy="104" r="4" style="--t:3"/>
+  </g>
   <g class="map-labels">
-    <text x="150" y="292">ОТЫРАР</text><text x="226" y="236">ТҮРКІСТАН</text><text x="364" y="166">САУРАН</text><text x="430" y="92">СЫҒАНАҚ</text>
+    <text x="150" y="292" style="--t:0">ОТЫРАР</text><text x="226" y="236" style="--t:1">ТҮРКІСТАН</text><text x="364" y="166" style="--t:2">САУРАН</text><text x="430" y="92" style="--t:3">СЫҒАНАҚ</text>
   </g>
   <g class="banner-rosette" stroke-width="1.4">
     <circle cx="470" cy="190" r="150"/><circle cx="470" cy="190" r="118" stroke-dasharray="2 6"/>
   </g>
+  <ellipse class="banner-glow" cx="528" cy="230" rx="120" ry="110" fill="url(#banner-glow-fill)" stroke="none"/>
   <g class="banner-monument" stroke-width="2.4">
     <path class="fill" d="M352 380V196h120v184zM472 380V266h112v114zM470 266c8-62 38-96 58-96s50 34 58 96z"/>
-    <path d="M344 196h136M352 196v-18M472 196v-18M352 380V196h120v184"/>
-    <path d="M384 380V284c0-30 14-50 28-60 14 10 28 30 28 60v96" />
-    <path d="M396 380v-84c0-18 7-30 16-36 9 6 16 18 16 36v84" opacity=".55"/>
-    <path d="M472 380V266h112v114M470 266c8-62 38-96 58-96s50 34 58 96M528 170v-18M500 266c3-34 13-62 28-80M556 266c-3-34-13-62-28-80" />
-    <path d="M366 214h92M366 226h92" opacity=".5" stroke-width="1.4"/>
+    <path pathLength="100" d="M344 196h136M352 196v-18M472 196v-18M352 380V196h120v184"/>
+    <path pathLength="100" d="M384 380V284c0-30 14-50 28-60 14 10 28 30 28 60v96" />
+    <path pathLength="100" d="M396 380v-84c0-18 7-30 16-36 9 6 16 18 16 36v84" opacity=".55"/>
+    <path pathLength="100" d="M472 380V266h112v114M470 266c8-62 38-96 58-96s50 34 58 96M528 170v-18M500 266c3-34 13-62 28-80M556 266c-3-34-13-62-28-80" />
+    <path pathLength="100" d="M366 214h92M366 226h92" opacity=".5" stroke-width="1.4"/>
+  </g>
+  <g class="banner-light" stroke-width="2.4">
+    <path pathLength="100" d="M344 196h136M352 196v-18M472 196v-18M352 380V196h120v184"/>
+    <path pathLength="100" d="M384 380V284c0-30 14-50 28-60 14 10 28 30 28 60v96" />
+    <path pathLength="100" d="M396 380v-84c0-18 7-30 16-36 9 6 16 18 16 36v84"/>
+    <path pathLength="100" d="M472 380V266h112v114M470 266c8-62 38-96 58-96s50 34 58 96M528 170v-18M500 266c3-34 13-62 28-80M556 266c-3-34-13-62-28-80" />
+    <path pathLength="100" d="M366 214h92M366 226h92" stroke-width="1.4"/>
   </g>
   <g class="banner-lines">
     <path d="M592 380 640 296" stroke-width="5"/><path d="M570 380 640 258" stroke-width="1.4"/>

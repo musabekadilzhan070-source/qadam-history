@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { esc, pad2, scoreBadge, formatDate } from '../util.js';
 import { icon, bannerArt, ornamentBand, ornamentMark } from '../art.js';
 import { periodCard, testCard } from '../components.js';
+import { firstTime } from '../live.js';
 import { site, fileUrl } from '../site.js';
 
 function progressPanel(user, periods, results) {
@@ -80,7 +81,7 @@ export async function homeView(el, _params, app, alive) {
   el.innerHTML = `
   <div class="home">
     <div class="home-main">
-      <section class="banner" aria-labelledby="banner-title">
+      <section class="banner${site.texts.banner_image_id ? '' : ' is-live'}${firstTime('banner') ? ' is-intro' : ''}" aria-labelledby="banner-title">
         ${site.texts.banner_image_id ? `<img class="banner-photo" src="${fileUrl(site.texts.banner_image_id)}" alt="" />` : bannerArt()}
         <p class="banner-kicker">${ornamentMark()}${site.t('banner_kicker')}</p>
         <h1 id="banner-title"><span>${site.t('banner_line1')}</span><span>${site.t('banner_line2')}</span><span class="accent">${site.t('banner_line3')}</span></h1>
@@ -89,6 +90,7 @@ export async function homeView(el, _params, app, alive) {
           <a class="btn" href="/tests" data-link>${site.t('banner_button')} ${icon('arrow', 'icon icon-arrow')}</a>
         </div>
         ${ornamentBand('banner-band')}
+        <span class="band-light" aria-hidden="true">${ornamentBand()}</span>
       </section>
 
       <section class="section" aria-labelledby="periods-title">
