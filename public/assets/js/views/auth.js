@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { esc } from '../util.js';
 import { periodEmblem, ornamentBand } from '../art.js';
-import { welcomeBackdrop, welcomeMark } from '../welcome-art.js';
+import { welcomeBackdrop, welcomeMark, livingMausoleum, registerBackdrop } from '../welcome-art.js';
 
 // Sign-in pages. Guests see only these: the rest of the site needs an account.
 
@@ -18,14 +18,16 @@ const keepNext = () => {
   return next ? `?next=${encodeURIComponent(next)}` : '';
 };
 
-function layout({ title, text, form, back = true }) {
+function layout({ title, text, form, back = true, live = false }) {
+  // The register page shows the mausoleum drawn in light; the other forms keep the still picture.
   return `
   <div class="panel auth">
-    <div class="auth-art">
+    <div class="auth-art${live ? ' is-live' : ''}">
+      ${live ? registerBackdrop() : ''}
       ${ornamentBand('band')}
-      ${periodEmblem(2)}
-      <h2>Тарихты жүйелі оқы</h2>
-      <p>Аккаунт тест нәтижелерін сақтап, қай тақырыпты қайталау керегін көрсетеді.</p>
+      ${live ? livingMausoleum() : periodEmblem(2)}
+      <h2${live ? ' class="wl-in" style="--n:9"' : ''}>Тарихты жүйелі оқы</h2>
+      <p${live ? ' class="wl-in" style="--n:10"' : ''}>Аккаунт тест нәтижелерін сақтап, қай тақырыпты қайталау керегін көрсетеді.</p>
     </div>
     <form class="auth-form" novalidate>
       ${back ? `<a class="auth-back" href="/welcome${keepNext()}" data-link>← Артқа</a>` : ''}
@@ -186,6 +188,7 @@ export function registerView(el, _params, app) {
   el.innerHTML = layout({
     title: 'Тіркелу',
     text: 'Оқушы аккаунтын ашыңыз. Бұл бір минуттан аз уақыт алады.',
+    live: true,
     form: `
       ${field({ name: 'display_name', label: 'Аты-жөніңіз', auto: 'name' })}
       ${field({ name: 'email', label: 'Электрондық пошта', type: 'email', auto: 'email', hint: 'Осы поштамен кіресіз.' })}

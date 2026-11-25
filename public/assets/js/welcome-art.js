@@ -88,3 +88,64 @@ export const welcomeBackdrop = () => `
     <div class="wl-sparks">${SPARKS}</div>
   </div>
   <span class="wl-edge" aria-hidden="true"><i></i></span>`;
+
+// ─── The register page (/register): the mausoleum drawn in red light ─────────────
+// The same picture as periodEmblem(2) (Қожа Ахмет Ясауи кесенесі), line for line, in the
+// order a hand would draw it: the ground, then the portal, walls and doors, then the
+// towers and the dome. Then a slow red light walks along the contours; nothing restarts.
+
+const STAGES = [
+  // 1. the ground line
+  [['M8 142h184', 2]],
+  // 2. walls, portal, doors, the inscription bands
+  [
+    ['M34 142V40h86v102', 3],
+    ['M28 40h98', 2.4],
+    ['M120 142V90h52v52', 2.4],
+    ['M58 142V86c0-18 9-30 19-36 10 6 19 18 19 36v56', 2.6],
+    ['M68 142V96c0-10 4-17 9-21 5 4 9 11 9 21v46', 1.8, 0.7],
+    ['M44 54h66M44 62h66', 1.4, 0.6],
+  ],
+  // 3. the towers of the portal, the dome and its ribs
+  [
+    ['M28 40V30M126 40V30', 2.4],
+    ['M118 90c4-30 18-46 28-46s24 16 28 46', 3],
+    ['M146 44v-10M134 90c2-16 6-30 12-38M158 90c-2-16-6-30-12-38', 1.6, 0.7],
+  ],
+];
+
+/** The living mausoleum for the left panel of the register page. */
+export const livingMausoleum = () => {
+  let i = 0;
+  const lines = STAGES.map((stage, s) =>
+    stage
+      .map(([d, w, o = 1]) => {
+        const n = i++;
+        return `<path class="lm-line" d="${d}" pathLength="100" stroke-width="${w}" style="--s:${s};--k:${n};--o:${o}"/>`;
+      })
+      .join(''),
+  ).join('');
+  i = 0;
+  const lights = STAGES.flat()
+    .map(([d, w]) => `<path class="lm-light" d="${d}" pathLength="100" stroke-width="${w}" style="--k:${i++}"/>`)
+    .join('');
+  return `
+    <div class="lm-stage" aria-hidden="true">
+      <span class="lm-dawn"></span>
+      <span class="lm-dome-glow"></span>
+      <span class="lm-rays"></span>
+      <svg class="emblem lm" viewBox="0 0 200 160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+        ${lines}
+        <g class="lm-lights">${lights}</g>
+      </svg>
+    </div>`;
+};
+
+/** The faint history behind the mausoleum: the old map, an ornament, writing, sparks. */
+export const registerBackdrop = () => `
+  <div class="wl-bg lm-bg" aria-hidden="true">
+    ${MAP}
+    ${rosette('wl-rosette')}
+    ${SCRIPT}
+    <div class="wl-sparks">${SPARKS}</div>
+  </div>`;
