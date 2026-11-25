@@ -16,7 +16,7 @@ import {
   tokenHash,
 } from './auth.js';
 import { mailConfigured, sendMail } from './mail.js';
-import { listPeriods, getPeriod, getPeriodBook, listTests, siteInfo, totals } from './content.js';
+import { listPeriods, getPeriod, getPeriodBook, listTests, listQuizzes, siteInfo, totals } from './content.js';
 import { findTest, firstTestOfTopic, startTest, submitTest, userResults, attemptDetail, startRework, submitRework, textbook } from './quiz.js';
 import { ensureFirstPublication } from './publish.js';
 import { orgRouter } from './org.js';
@@ -182,6 +182,10 @@ app.use('/api/books', requireUser, booksRouter);
 app.use('/api/activity', requireUser, activityRouter);
 app.use('/api/report', requireUser, reportRouter);
 // Quiz: the game format, with the progress kept on the server (quizgame.js).
+// The «Quiz» page: every published quiz with the student's progress.
+app.get('/api/quizzes', requireUser, wrap(async (req, res) => {
+  res.json({ periods: await listPeriods(userId(req)), quizzes: await listQuizzes(userId(req)) });
+}));
 app.use('/api/quizzes', requireUser, quizRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
