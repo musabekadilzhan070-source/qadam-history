@@ -2011,6 +2011,205 @@ main:focus {
   color: var(--bordo);
   opacity: 0.6;
 }
+/* ─── Register (/register): the mausoleum drawn in red light ─────────
+   Left panel of the register form only. Once: a dim red dawn, the ground, the walls and
+   doors, the towers and dome (about 3 s). Then it stays: a slow light along the contours,
+   the dome's glow and the light from below breathe; the backdrop keeps drifting. */
+.auth-art.is-live {
+  --wl-red: var(--red-line);
+  --wl-gold: #c9a24a;
+  --wl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background: radial-gradient(90% 70% at 50% 30%, #150709 0%, var(--black) 62%) var(--black);
+}
+.lm-stage {
+  position: absolute;
+  left: 50%;
+  top: 40px;
+  width: 70%;
+  aspect-ratio: 200 / 160;
+  translate: -50% 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.auth-art .lm-stage .lm {
+  position: static;
+  translate: none;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  opacity: 0.85;
+  animation: lm-breathe 7s ease-in-out 3.4s infinite;
+}
+.lm-line {
+  color: var(--red-line);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: var(--o);
+  animation: lm-draw 0.85s cubic-bezier(0.55, 0.05, 0.25, 1) calc(0.35s + var(--s) * 0.6s + var(--k) * 0.1s) forwards;
+}
+/* The light walking along the drawn lines, one stretch after another. */
+.lm-light {
+  stroke: #ff5a60;
+  stroke-dasharray: 9 140;
+  stroke-dashoffset: 9;
+  opacity: 0;
+  animation: lm-walk 9s ease-in-out calc(3.3s + var(--k) * 0.85s) infinite;
+}
+.lm-lights {
+  filter: drop-shadow(0 0 2.5px rgb(199 38 44 / 0.9));
+}
+/* First a dim red dawn behind the building. */
+.lm-dawn {
+  position: absolute;
+  inset: -25% -30% -10%;
+  background: radial-gradient(closest-side, rgb(110 16 24 / 0.42), transparent);
+  opacity: 0;
+  animation: wl-fade 1s ease-out forwards;
+}
+/* The dome's own soft light (dome at 73% / 40% of the picture). */
+.lm-dome-glow {
+  position: absolute;
+  left: 73%;
+  top: 40%;
+  width: 52%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(199 38 44 / 0.3), rgb(110 16 24 / 0.12) 45%, transparent 70%);
+  opacity: 0;
+  animation:
+    lm-glow-in 1.1s ease-out 2.6s forwards,
+    lm-pulse 6s ease-in-out 3.7s infinite;
+}
+/* A faint red light rising from the foot of the building. */
+.lm-rays {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4%;
+  height: 55%;
+  background: radial-gradient(60% 100% at 50% 100%, rgb(199 38 44 / 0.22), transparent 70%);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation:
+    lm-glow-in 1.2s ease-out 1s forwards,
+    lm-rise 8s ease-in-out 2.2s infinite;
+}
+/* The backdrop sits quieter here: the building is the picture. */
+.lm-bg .wl-map {
+  top: 30%;
+  width: 150%;
+  margin-left: -75%;
+  opacity: 0.12;
+}
+.lm-bg .wl-rosette {
+  right: -110px;
+  bottom: auto;
+  top: -110px;
+  width: 260px;
+  height: 260px;
+  opacity: 0.07;
+}
+.lm-bg .wl-script {
+  top: auto;
+  bottom: 120px;
+  left: auto;
+  right: -10px;
+  width: 130px;
+  transform: rotate(6deg);
+}
+@keyframes lm-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes lm-walk {
+  0% {
+    stroke-dashoffset: 9;
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.9;
+  }
+  45% {
+    stroke-dashoffset: -100;
+    opacity: 0.9;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+@keyframes lm-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes lm-glow-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes lm-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.7;
+  }
+}
+@keyframes lm-rise {
+  0%,
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleY(1.12);
+    opacity: 0.65;
+  }
+}
+@media (max-width: 900px) {
+  .lm-stage {
+    width: 160px;
+    top: 34px;
+  }
+  .lm-bg .wl-sparks i:nth-child(2n) {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-art.is-live *,
+  .auth-art.is-live *::before,
+  .auth-art.is-live *::after {
+    animation: none !important;
+  }
+  .auth-art.is-live .wl-in,
+  .auth-art.is-live .wl-bg,
+  .lm-dawn,
+  .lm-dome-glow,
+  .lm-rays {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  .lm-line {
+    stroke-dashoffset: 0;
+  }
+  .lm-light,
+  .auth-art.is-live .wl-sparks {
+    display: none;
+  }
+}
 .auth-form {
   padding: 40px 40px 36px;
 }
