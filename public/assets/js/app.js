@@ -4,6 +4,7 @@ import { icon, ornamentMark } from './art.js';
 import { loading, errorBox } from './components.js';
 import { site } from './site.js';
 import { activity } from './activity.js';
+import { liven } from './live.js';
 import { homeView } from './views/home.js';
 import { periodsView, periodView, periodBookView } from './views/periods.js';
 import { quizView, legacyQuizView } from './views/quiz.js';
@@ -163,6 +164,7 @@ async function render() {
     const params = path.match(route.re).slice(1).map(decodeURIComponent);
     const out = await route.view(view, params, app, () => token === renderToken);
     if (token === renderToken && typeof out === 'function') cleanup = out;
+    if (token === renderToken) liven(view);
   } catch (err) {
     if (token !== renderToken) return;
     if (err.status === 401) {

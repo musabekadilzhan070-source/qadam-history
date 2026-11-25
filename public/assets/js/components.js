@@ -13,7 +13,8 @@ export function periodCard(p) {
   return `
   <article class="period-card">
     <span class="roman" aria-hidden="true">${ROMAN[p.number] || ''}</span>
-    ${site.emblem(p.number)}
+    <span class="pc-glow" aria-hidden="true"></span>
+    ${site.emblem(p.number, 'emblem', true)}
     <span class="num" aria-hidden="true">${pad2(p.number)}</span>
     <p class="range">${esc(p.range_label)}</p>
     <h3><a href="${href}" data-link>${esc(p.title)}</a></h3>
@@ -38,6 +39,7 @@ export function pageHead({ eyebrow, title, text = '', number = null, extra = '' 
     ${text ? `<p>${esc(text)}</p>` : ''}
     ${extra}
     ${ornamentBand('band')}
+    <span class="band-light" aria-hidden="true">${ornamentBand()}</span>
   </header>`;
 }
 

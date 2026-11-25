@@ -6130,3 +6130,339 @@ html.reader-full-open body {
 .qg-feedback[hidden] {
   display: none;
 }
+
+/* ─── Living pages: the home banner, the period cards, the page heads ───────────
+   Lines drawn in red light, then slow quiet loops. Only transform, opacity and stroke-dash
+   move, so phones stay smooth; everything stops for prefers-reduced-motion. */
+
+/* The ornament band: a red light passes along it from time to time. */
+.band-light {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 26px;
+  color: var(--red-line);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 50%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 50%, transparent 100%);
+  -webkit-mask-size: 26% 100%;
+  mask-size: 26% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: -40% 0;
+  mask-position: -40% 0;
+  opacity: 0.85;
+  animation: wl-band 11s linear 1.2s infinite;
+}
+.band-light svg {
+  display: block;
+  width: 100%;
+  height: 26px;
+}
+.page-head .band-light {
+  z-index: -1;
+}
+
+/* Home banner: the caravan moves along the Silk Road, the towns call out one by one,
+   the rosette turns, a light walks along the mausoleum and its dome glows. */
+.banner.is-live .map-river {
+  animation: lv-flow 2.4s linear infinite;
+}
+.banner.is-live .map-rings circle {
+  fill: none;
+  stroke: var(--red-line);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lv-ring 8s ease-out calc(var(--t) * 2s) infinite;
+}
+.banner.is-live .banner-rosette circle:last-child {
+  transform-origin: 470px 190px;
+  animation: lv-turn 90s linear infinite;
+}
+.banner.is-live .banner-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lv-breathe 6s ease-in-out infinite;
+}
+.banner-art .banner-light {
+  stroke: #ff5a60;
+  filter: drop-shadow(0 0 3px rgb(199 38 44 / 0.9));
+}
+.banner-art .banner-light path {
+  stroke-dasharray: 8 140;
+  stroke-dashoffset: 8;
+  opacity: 0;
+}
+.banner.is-live .banner-light path {
+  animation: lv-walk 10s ease-in-out infinite;
+}
+.banner.is-live .banner-light path:nth-child(2) { animation-delay: 1.2s; }
+.banner.is-live .banner-light path:nth-child(3) { animation-delay: 1.6s; }
+.banner.is-live .banner-light path:nth-child(4) { animation-delay: 2.4s; }
+.banner.is-live .banner-light path:nth-child(5) { animation-delay: 3.4s; }
+
+/* The opening, once per visit: the map fades in, the mausoleum is drawn, the text rises. */
+.banner.is-intro .banner-art {
+  animation: lv-fade 0.9s ease-out both;
+}
+.banner.is-intro .banner-monument path[pathLength] {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: lm-draw 1.6s cubic-bezier(0.6, 0.05, 0.3, 1) forwards;
+}
+.banner.is-intro .banner-monument path:nth-child(2) { animation-delay: 0.3s; }
+.banner.is-intro .banner-monument path:nth-child(3) { animation-delay: 0.55s; }
+.banner.is-intro .banner-monument path:nth-child(4) { animation-delay: 0.75s; }
+.banner.is-intro .banner-monument path:nth-child(5) { animation-delay: 0.9s; }
+.banner.is-intro .banner-monument path:nth-child(6) { animation-delay: 1.1s; }
+.banner.is-intro .banner-monument .fill {
+  animation: lv-fade 1s ease-out 1.2s both;
+}
+.banner.is-intro .map-labels text {
+  animation: lv-fade 0.8s ease-out calc(1.2s + var(--t) * 0.25s) both;
+}
+.banner.is-intro .banner-kicker,
+.banner.is-intro h1 span,
+.banner.is-intro > p,
+.banner.is-intro .banner-actions {
+  animation: lv-rise 0.75s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.banner.is-intro h1 span:nth-child(1) { animation-delay: 0.15s; }
+.banner.is-intro h1 span:nth-child(2) { animation-delay: 0.3s; }
+.banner.is-intro h1 span:nth-child(3) { animation-delay: 0.45s; }
+.banner.is-intro > p { animation-delay: 0.65s; }
+.banner.is-intro .banner-actions { animation-delay: 0.8s; }
+
+/* The banner button: a soft shine crosses it on hover (and once after the opening). */
+.banner-actions .btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.banner-actions .btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(105deg, transparent 30%, rgb(255 255 255 / 0.28) 50%, transparent 70%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.banner-actions .btn:hover::after,
+.banner.is-intro .banner-actions .btn::after {
+  animation: lv-shine 0.9s ease-out;
+}
+.banner.is-intro .banner-actions .btn::after {
+  animation-delay: 1.5s;
+}
+
+/* Period cards: they rise into view one after another and their emblem is drawn line by
+   line. Then a red light runs along one card at a time, like a relay through the ages. */
+.pc-glow {
+  position: absolute;
+  right: 12%;
+  top: 0;
+  z-index: -2;
+  width: 58%;
+  aspect-ratio: 1;
+  background: radial-gradient(closest-side, rgb(199 38 44 / 0.2), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.period-card .pe-light {
+  stroke: #ff5a60;
+  filter: drop-shadow(0 0 2.5px rgb(199 38 44 / 0.9));
+}
+.period-card .pe-light > * {
+  stroke-dasharray: 10 140;
+  stroke-dashoffset: 10;
+  opacity: 0;
+}
+.period-card.pc-live {
+  opacity: 0;
+  transform: translateY(22px);
+}
+.period-card.pc-live.is-seen {
+  animation: lv-card 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i) * 0.12s) forwards;
+}
+.period-card.pc-live .pe-live > :not(.pe-light) {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+.period-card.pc-live.is-seen .pe-live > :not(.pe-light) {
+  animation: lm-draw 1.5s cubic-bezier(0.6, 0.05, 0.3, 1) calc(0.25s + var(--i) * 0.12s) forwards;
+}
+.period-card.pc-live .bar {
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.period-card.pc-live.is-seen .bar {
+  animation: lv-grow 0.6s ease-out calc(0.6s + var(--i) * 0.12s) forwards;
+}
+.period-card.pc-live.is-seen .pc-glow {
+  animation: lv-breathe 7s ease-in-out calc(1.5s + var(--i) * 1.75s) infinite;
+}
+.period-card.pc-live.is-seen .pe-light > * {
+  animation: lv-relay 16s ease-in-out calc(2.2s + var(--i) * 4s) infinite;
+}
+/* Small life of each emblem: the sun's rays turn, the seal's star turns, Bayterek's sphere glows. */
+.period-card.pc-live.is-seen .pe-1 > path:nth-of-type(4) {
+  transform-origin: 100px 48px;
+  animation:
+    lm-draw 1.5s cubic-bezier(0.6, 0.05, 0.3, 1) calc(0.25s + var(--i) * 0.12s) forwards,
+    lv-turn 40s linear 2s infinite;
+}
+.period-card.pc-live.is-seen .pe-3 > path:nth-of-type(5) {
+  transform-origin: 122px 116.5px;
+  animation:
+    lm-draw 1.5s cubic-bezier(0.6, 0.05, 0.3, 1) calc(0.25s + var(--i) * 0.12s) forwards,
+    lv-turn 30s linear 2s infinite;
+}
+.period-card.pc-live.is-seen .pe-4 > circle {
+  transform-origin: 100px 40px;
+  animation:
+    lm-draw 1.5s cubic-bezier(0.6, 0.05, 0.3, 1) calc(0.25s + var(--i) * 0.12s) forwards,
+    lv-pulse 5s ease-in-out 2s infinite;
+}
+.period-card .emblem {
+  transition:
+    opacity 0.2s,
+    transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.period-card:hover .emblem {
+  transform: translateY(-5px);
+}
+
+@keyframes lv-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+@keyframes lv-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  25%,
+  100% {
+    opacity: 0;
+    transform: scale(4.5);
+  }
+}
+@keyframes lv-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes lv-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+@keyframes lv-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+@keyframes lv-walk {
+  0% {
+    stroke-dashoffset: 8;
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.95;
+  }
+  45% {
+    stroke-dashoffset: -100;
+    opacity: 0.95;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+@keyframes lv-relay {
+  0% {
+    stroke-dashoffset: 10;
+    opacity: 0;
+  }
+  2% {
+    opacity: 1;
+  }
+  20% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+  23%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+@keyframes lv-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes lv-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes lv-card {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lv-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes lv-shine {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (max-width: 760px) {
+  .banner.is-live .banner-rosette circle:last-child {
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .band-light,
+  .banner-art .banner-light,
+  .period-card .pe-light {
+    display: none;
+  }
+  .banner.is-live *,
+  .banner.is-intro *,
+  .banner-actions .btn::after,
+  .period-card * {
+    animation: none !important;
+  }
+  .period-card.pc-live {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}
