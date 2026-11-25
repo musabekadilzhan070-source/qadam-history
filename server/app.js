@@ -28,6 +28,7 @@ import { seedIfEmpty } from './seed.js';
 import { linkExistingBooksOnce } from './shelves.js';
 import { runImportsOnce } from './imports.js';
 import { quizRouter, userQuizResults } from './quizgame.js';
+import { practiceRouter } from './practice.js';
 
 // Express 4 does not catch rejected promises: route them to the error handler.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -187,6 +188,8 @@ app.get('/api/quizzes', requireUser, wrap(async (req, res) => {
   res.json({ periods: await listPeriods(userId(req)), quizzes: await listQuizzes(userId(req)) });
 }));
 app.use('/api/quizzes', requireUser, quizRouter);
+// ҰБТ сынақ, карточкалар, жетістіктер.
+app.use('/api/practice', requireUser, practiceRouter);
 
 // ─── Results ───────────────────────────────────────────────────────
 app.get('/api/results', requireUser, wrap(async (req, res) => {

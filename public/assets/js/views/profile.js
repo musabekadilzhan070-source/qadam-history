@@ -2,10 +2,12 @@ import { api } from '../api.js';
 import { esc, initials, formatDate } from '../util.js';
 import { icon } from '../art.js';
 import { pageHead } from '../components.js';
+import { medal } from '../badges.js';
 
 export async function profileView(el, _params, app, alive) {
-  const { summary } = await api.get('/api/results');
+  const [{ summary }, badges] = await Promise.all([api.get('/api/results'), api.get('/api/practice/badges').catch(() => null)]);
   if (!alive()) return;
+  const earned = badges ? badges.badges.filter((b) => b.earned_at).sort((a, b) => (a.earned_at < b.earned_at ? 1 : -1)) : [];
   const u = app.user;
   el.innerHTML = `
     ${pageHead({ eyebrow: 'Оқушы аккаунты', title: 'Профиль' })}
@@ -25,6 +27,20 @@ export async function profileView(el, _params, app, alive) {
           <button class="btn btn-ghost btn-sm" type="button" id="logout">${icon('logout')} Шығу</button>
         </div>
       </section>
+
+      ${
+        badges
+          ? `<section class="panel profile-badges">
+              <div class="profile-badges-head"><h2>Жетістіктер</h2><span>${badges.earned} / ${badges.badges.length}</span></div>
+              ${
+                earned.length
+                  ? `<ul class="medal-row">${earned.slice(0, 8).map((b) => `<li title="${esc(b.title)}">${medal(b, 'sm')}<span>${esc(b.title)}</span></li>`).join('')}</ul>`
+                  : '<p class="profile-badges-empty">Әзірге белгі жоқ. Бірінші тестті тапсырыңыз: «Алғашқы қадам» белгісі бірден беріледі.</p>'
+              }
+              <a class="btn btn-dark btn-sm" href="/achievements" data-link>${icon('medal')} Барлық жетістіктер</a>
+            </section>`
+          : ''
+      }
 
       <section class="panel">
         <h2>Аты-жөні және пошта</h2>

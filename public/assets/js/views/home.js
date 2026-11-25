@@ -3,6 +3,7 @@ import { esc, pad2, scoreBadge, formatDate } from '../util.js';
 import { icon, bannerArt, ornamentBand, ornamentMark } from '../art.js';
 import { periodCard, testCard } from '../components.js';
 import { firstTime } from '../live.js';
+import { medal } from '../badges.js';
 import { site, fileUrl } from '../site.js';
 
 function progressPanel(user, periods, results) {
@@ -57,6 +58,23 @@ function recentPanel(user, results) {
   </section>`;
 }
 
+/** Ways to practise beside the tests: the mock exam, the cards and the badges. */
+function practicePanel(badges) {
+  if (!badges) return '';
+  const st = badges.stats;
+  const earned = badges.badges.filter((b) => b.earned_at).sort((a, b) => (a.earned_at < b.earned_at ? 1 : -1));
+  return `
+  <section class="panel aside-card practice-card">
+    <h2>Дайындық</h2>
+    <ul class="practice-links">
+      <li><a href="/ubt" data-link><span class="pl-icon">${icon('exam')}</span><span class="pl-body"><b>ҰБТ сынақ</b><span>${st.mocks ? `Ең жоғары: ${st.mock_best_percent}% · ${st.mocks} сынақ` : 'Нағыз ҰБТ форматында тексеріп көр'}</span></span>${icon('arrow')}</a></li>
+      <li><a href="/cards" data-link><span class="pl-icon">${icon('cards')}</span><span class="pl-body"><b>Карточкалар</b><span>${st.cards_learned ? `${st.cards_learned} карточка меңгерілді` : 'Даталар мен тұлғаларды жатта'}</span></span>${icon('arrow')}</a></li>
+      <li><a href="/achievements" data-link><span class="pl-icon">${icon('medal')}</span><span class="pl-body"><b>Жетістіктер</b><span>${badges.earned} / ${badges.badges.length} белгі</span></span>${icon('arrow')}</a></li>
+    </ul>
+    ${earned.length ? `<ul class="medal-row medal-row-sm">${earned.slice(0, 6).map((b) => `<li title="${esc(b.title)}">${medal(b, 'sm')}</li>`).join('')}</ul>` : ''}
+  </section>`;
+}
+
 function platformPanel(totals) {
   return `
   <section class="panel aside-card">
@@ -70,9 +88,10 @@ function platformPanel(totals) {
 }
 
 export async function homeView(el, _params, app, alive) {
-  const [overview, results] = await Promise.all([
+  const [overview, results, badges] = await Promise.all([
     api.get('/api/overview'),
     app.user ? api.get('/api/results').catch(() => null) : null,
+    app.user ? api.get('/api/practice/badges').catch(() => null) : null,
   ]);
   if (!alive()) return;
   const { periods, totals, tests } = overview;
@@ -134,6 +153,7 @@ export async function homeView(el, _params, app, alive) {
 
     <aside class="home-aside" aria-label="Прогресс">
       ${progressPanel(app.user, periods, results)}
+      ${practicePanel(badges)}
       ${recentPanel(app.user, results)}
       ${platformPanel(totals)}
     </aside>

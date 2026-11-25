@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { checkBadges } from '../badges.js';
 import { esc, formatDuration } from '../util.js';
 import { icon } from '../art.js';
 import { fileUrl, renderIcon } from '../site.js';
@@ -419,6 +420,8 @@ export function createGame(el, app, alive, opts = {}) {
   function finish() {
     stop();
     const s = state;
+    // A signed-in student may have earned a badge (not on a link, where anyone can play).
+    if (!opts.crumbs) checkBadges();
     el.innerHTML = `
       ${crumbs(s.quiz)}
       <section class="qg qg-done" aria-live="polite">

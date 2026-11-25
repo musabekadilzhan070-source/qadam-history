@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { checkBadges } from '../badges.js';
 import { esc, formatDate } from '../util.js';
 import { icon } from '../art.js';
 import { runQuiz } from './quiz.js';
@@ -37,6 +38,7 @@ export async function reworkView(el, [id], app, alive) {
     submit: (answers, paper) => api.post(`/api/results/${encodeURIComponent(id)}/rework`, { answers, token: paper.token }),
     onResult: (r) => {
       if (!alive()) return;
+      if (r.attempt_id) checkBadges();
       el.innerHTML = `
         <div class="quiz">
           ${resultHero(r, {
