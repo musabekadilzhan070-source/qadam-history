@@ -131,14 +131,19 @@ export const livingMausoleum = () => {
     .join('');
   return `
     <div class="lm-stage" aria-hidden="true">
-      <span class="lm-dawn"></span>
-      <span class="lm-dome-glow"></span>
-      <span class="lm-rays"></span>
-      <svg class="emblem lm" viewBox="0 0 200 160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-        ${lines}
-        <g class="lm-lights">${lights}</g>
-      </svg>
-    </div>`;
+      <div class="lm-frame">
+        <span class="lm-dawn"></span>
+        <span class="lm-dome-glow"></span>
+        <span class="lm-rays"></span>
+        <svg class="emblem lm" viewBox="0 0 200 160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          ${lines}
+          <g class="lm-lights">${lights}</g>
+        </svg>
+      </div>
+    </div>
+    <ol class="lm-eras" aria-hidden="true">
+      ${['Ежелгі заман', 'Орта ғасыр', 'Жаңа заман', 'Қазіргі заман'].map((t, n) => `<li style="--e:${n}"><i></i><span>${t}</span></li>`).join('')}
+    </ol>`;
 };
 
 /** The faint history behind the mausoleum: the old map, an ornament, writing, sparks. */
