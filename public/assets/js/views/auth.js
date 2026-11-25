@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { esc } from '../util.js';
-import { periodEmblem, ornamentBand, ornamentMark } from '../art.js';
+import { periodEmblem, ornamentBand } from '../art.js';
+import { welcomeBackdrop, welcomeMark } from '../welcome-art.js';
 
 // Sign-in pages. Guests see only these: the rest of the site needs an account.
 
@@ -128,17 +129,30 @@ export function welcomeView(el, _params, app) {
   if (app.user) return app.navigate(nextPath(), { replace: true });
   el.innerHTML = `
   <section class="welcome panel">
+    ${welcomeBackdrop()}
     ${ornamentBand('band')}
-    <div class="welcome-mark" aria-hidden="true">${ornamentMark()}</div>
-    <p class="eyebrow">QADAM · Қазақстан тарихы</p>
-    <h1>Тарихты оқы, тест тапсыр, нәтижеңді бақыла</h1>
-    <p class="welcome-text">Платформаны пайдалану үшін аккаунтыңызға кіріңіз немесе жаңа аккаунт ашыңыз.</p>
+    <span class="wl-band-light" aria-hidden="true">${ornamentBand()}</span>
+    ${welcomeMark()}
+    <p class="eyebrow wl-in" style="--n:3">QADAM · Қазақстан тарихы</p>
+    <h1 class="wl-in" style="--n:4">Тарихты оқы, тест тапсыр, нәтижеңді бақыла</h1>
+    <p class="welcome-text wl-in" style="--n:5">Платформаны пайдалану үшін аккаунтыңызға кіріңіз немесе жаңа аккаунт ашыңыз.</p>
     <div class="welcome-actions">
-      <a class="btn btn-block" href="/login${keepNext()}" data-link>Кіру</a>
-      <a class="btn btn-dark btn-block" href="/register${keepNext()}" data-link>Тіркелу</a>
+      <div class="wl-in" style="--n:6"><a class="btn btn-block wl-btn" href="/login${keepNext()}" data-link><span>Кіру</span></a></div>
+      <div class="wl-in" style="--n:7"><a class="btn btn-dark btn-block wl-btn" href="/register${keepNext()}" data-link><span>Тіркелу</span></a></div>
     </div>
-    ${periodEmblem(3)}
   </section>`;
+  // A touch leaves a ripple where the finger was (also a click with a mouse).
+  el.querySelector('.welcome-actions').addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('.wl-btn');
+    if (!btn) return;
+    const box = btn.getBoundingClientRect();
+    const dot = document.createElement('i');
+    dot.className = 'wl-ripple';
+    dot.style.left = `${e.clientX - box.left}px`;
+    dot.style.top = `${e.clientY - box.top}px`;
+    btn.append(dot);
+    setTimeout(() => dot.remove(), 700);
+  });
 }
 
 export function loginView(el, _params, app) {
