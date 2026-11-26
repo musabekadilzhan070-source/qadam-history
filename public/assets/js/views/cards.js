@@ -8,9 +8,9 @@ import { checkBadges } from '../badges.js';
 // Every card says which textbook and page it comes from. A session shows the cards due for review
 // first, then new ones; the student turns a card over and says whether they knew it. Known cards
 // come back after longer and longer breaks (Leitner boxes, kept on the server); a card they did
-// not know comes back again in the same session.
+// not know comes back again in the same session. A session takes every card of the chosen
+// section and period; the student can stop at any time, and what they marked is saved.
 
-const SESSION = 20;
 const KIND = { date: 'Дата', person: 'Тұлға' };
 const SLUG = { date: 'dates', person: 'persons' };
 const SECTION = {
@@ -106,7 +106,7 @@ export async function cardsView(el, [section], app, alive) {
         <div class="cards-actions">
           ${
             c.all
-              ? `${ready ? `<button type="button" class="btn btn-lg" data-go="learn">${icon('cards')} Жаттауды бастау <small>${Math.min(ready, SESSION)}</small></button>` : '<p class="cards-done">Бүгінгі карточкалар қайталанды. Келесі қайталау уақыты келгенде осында шығады.</p>'}
+              ? `${ready ? `<button type="button" class="btn btn-lg" data-go="learn">${icon('cards')} Жаттауды бастау <small>${ready}</small></button>` : '<p class="cards-done">Бүгінгі карточкалар қайталанды. Келесі қайталау уақыты келгенде осында шығады.</p>'}
                  <button type="button" class="btn btn-ghost" data-go="all">Барлығын аралас қайталау</button>
                  <label class="cards-flip-opt"><input type="checkbox" data-reverse ${state.reverse ? 'checked' : ''} /> Алдымен ${state.kind === 'person' ? 'сипаттамасы' : 'оқиғасы'} көрсетілсін</label>`
               : '<p class="cards-done">Бұл сүзгі бойынша карточка жоқ.</p>'
@@ -151,9 +151,9 @@ export async function cardsView(el, [section], app, alive) {
       const deckNow = inDeck();
       const due = deckNow.filter(isDue).sort((a, b) => boxOf(a) - boxOf(b));
       const fresh = deckNow.filter((x) => !boxOf(x));
-      startSession([...due, ...fresh].slice(0, SESSION));
+      startSession([...due, ...fresh]);
     });
-    el.querySelector('[data-go="all"]')?.addEventListener('click', () => startSession(shuffle(inDeck()).slice(0, SESSION)));
+    el.querySelector('[data-go="all"]')?.addEventListener('click', () => startSession(shuffle(inDeck())));
   }
 
   function startSession(cards) {
