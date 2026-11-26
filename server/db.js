@@ -553,6 +553,11 @@ const COLUMNS = [
   ['tests', 'source_test_id', 'INTEGER'],
   // The question a quiz copy was made from (only while copying: maps contexts to their children).
   ['questions', 'copied_from', 'INTEGER'],
+  // «Сынақ тесттер»: the variant (1–10) a mock exam was sat on, and its score per level (A, B, C).
+  ['mock_runs', 'variant', 'INTEGER'],
+  ['mock_runs', 'by_level', "TEXT NOT NULL DEFAULT '[]'"],
+  // The textbook and page a card was taken from.
+  ['fact_cards', 'source', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 async function addMissingColumns() {

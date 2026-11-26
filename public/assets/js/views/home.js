@@ -67,7 +67,7 @@ function practicePanel(badges) {
   <section class="panel aside-card practice-card">
     <h2>Дайындық</h2>
     <ul class="practice-links">
-      <li><a href="/ubt" data-link><span class="pl-icon">${icon('exam')}</span><span class="pl-body"><b>ҰБТ сынақ</b><span>${st.mocks ? `Ең жоғары: ${st.mock_best_percent}% · ${st.mocks} сынақ` : 'Нағыз ҰБТ форматында тексеріп көр'}</span></span>${icon('arrow')}</a></li>
+      <li><a href="/sinaq" data-link><span class="pl-icon">${icon('exam')}</span><span class="pl-body"><b>Сынақ тесттер</b><span>${st.mocks ? `Ең жоғары: ${st.mock_best_percent}% · ${st.mocks} сынақ` : '10 нұсқа, А, В, С деңгейлі 50 сұрақтан'}</span></span>${icon('arrow')}</a></li>
       <li><a href="/cards" data-link><span class="pl-icon">${icon('cards')}</span><span class="pl-body"><b>Карточкалар</b><span>${st.cards_learned ? `${st.cards_learned} карточка меңгерілді` : 'Даталар мен тұлғаларды жатта'}</span></span>${icon('arrow')}</a></li>
       <li><a href="/achievements" data-link><span class="pl-icon">${icon('medal')}</span><span class="pl-body"><b>Жетістіктер</b><span>${badges.earned} / ${badges.badges.length} белгі</span></span>${icon('arrow')}</a></li>
     </ul>

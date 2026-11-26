@@ -31,7 +31,7 @@ export async function achievementsView(el, _params, _app, alive) {
     ${pageHead({
       eyebrow: 'Менің жолым',
       title: 'Жетістіктер',
-      text: 'Тест, quiz, ҰБТ сынағы мен карточкалар үшін белгілер. Әр белгінің астында оған қанша қалғаны көрсетіледі.',
+      text: 'Тест, quiz, сынақ тесттер мен карточкалар үшін белгілер. Әр белгінің астында оған қанша қалғаны көрсетіледі.',
       extra: `<ul class="head-stats"><li><b>${data.earned}</b>/ ${data.badges.length} белгі</li><li><b>${data.stats.streak}</b>күн қатарынан (ең ұзақ)</li><li><b>${data.stats.cards_learned}</b>карточка меңгерілді</li></ul>`,
     })}
     ${

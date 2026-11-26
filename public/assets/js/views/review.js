@@ -128,7 +128,7 @@ export function reviewList(items) {
           : ''
       }
       <li class="panel review-item ${ok ? 'is-ok' : 'is-bad'}">
-        <h3>${icon(ok ? 'check' : 'cross')}<span>${i + 1}. ${esc(q.text)}</span><em class="review-points">${num(q.earned)} / ${num(q.points)} ұпай</em></h3>
+        <h3>${icon(ok ? 'check' : 'cross')}<span>${q.level ? `<i class="lv lv-${esc(q.level)}">${esc(q.level)}</i>` : ''}${i + 1}. ${esc(q.text)}</span><em class="review-points">${num(q.earned)} / ${num(q.points)} ұпай</em></h3>
         ${q.image_id ? `<img class="q-image" src="${fileUrl(q.image_id)}" alt="" loading="lazy" />` : ''}
         ${q.multiple ? '<p class="q-hint">Бірнеше дұрыс жауабы бар сұрақ</p>' : ''}
         ${body}
