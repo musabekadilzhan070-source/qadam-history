@@ -318,7 +318,8 @@ function topicList(period) {
             </div>
           </div>
           <div class="topic-actions">
-            ${t.first_test_id ? `<a class="btn btn-sm" href="/tests/${t.first_test_id}" data-link>Тестті бастау</a>` : '<span class="range">Тест әлі жоқ</span>'}
+            ${t.first_test_id ? `<a class="btn btn-sm" href="/tests/${t.first_test_id}" data-link>Тестті бастау</a>
+              <a class="btn btn-sm btn-ghost btn-quick" href="/quick/${t.first_test_id}" data-link>${icon('quiz')}Жылдам тест</a>` : '<span class="range">Тест әлі жоқ</span>'}
           </div>
         </li>`,
         )
