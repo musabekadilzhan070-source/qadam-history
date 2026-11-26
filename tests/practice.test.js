@@ -185,16 +185,20 @@ test('cards: the textbook set is there with sources, Leitner boxes move, the org
   const eset = data.cards.find((c) => c.front === 'Есет Көтібарұлы');
   assert.ok(!/Кіші жүздегі/.test(eset.back), 'Есет is not confused with Сырым Датұлы');
   // Every correction leads to a card of the current set.
-  const { CARD_FIXES_V4, CARD_FIXES_V5 } = await import('../server/seed/card-fixes.js');
+  const { CARD_FIXES_V4, CARD_FIXES_V5, CARD_FIXES_V6 } = await import('../server/seed/card-fixes.js');
   assert.ok(data.cards.every((c) => c.note), 'every card has a note');
   const has = (f) => data.cards.some((c) => c.kind === f[0] && c.front === f[4] && c.back === f[5] && c.note === f[6]);
-  for (const f of CARD_FIXES_V5) assert.ok(has(f), f[4]);
-  // Each v5 row starts from a card as v4 left it, so an older database moves through both steps.
+  // Each step starts from a card as the step before left it, and its result is in the set unless a later step changed it again.
   const key = (f, at) => [f[0], f[at], f[at + 1], f[at + 2]].join('|');
-  const afterV4 = new Set(CARD_FIXES_V4.map((f) => key(f, 4)));
-  for (const f of CARD_FIXES_V5) assert.ok(afterV4.has(key(f, 1)), `v5 follows v4: ${f[1]}`);
-  const fixedAgain = new Set(CARD_FIXES_V5.map((f) => key(f, 1)));
-  for (const f of CARD_FIXES_V4) if (!fixedAgain.has(key(f, 4))) assert.ok(has(f), f[4]);
+  const steps = [CARD_FIXES_V4, CARD_FIXES_V5, CARD_FIXES_V6];
+  steps.forEach((rows, n) => {
+    if (n) {
+      const before = new Set(steps[n - 1].map((f) => key(f, 4)));
+      for (const f of rows) assert.ok(before.has(key(f, 1)), `step ${n} follows the one before: ${f[1]}`);
+    }
+    const later = new Set(steps.slice(n + 1).flat().map((f) => key(f, 1)));
+    for (const f of rows) if (!later.has(key(f, 4))) assert.ok(has(f), f[4]);
+  });
   const card = data.cards.find((c) => c.front === '1465–1466 жылдар');
   assert.equal(card.back, 'Қазақ хандығының құрылуы');
 
