@@ -80,6 +80,7 @@ export function testCard(t) {
       </div>
       <div class="actions">
         <a class="btn btn-sm" href="/tests/${t.id}" data-link>${t.attempts ? 'Қайта тапсыру' : 'Тестті бастау'}</a>
+        <a class="btn btn-sm btn-ghost btn-quick" href="/quick/${t.id}" data-link>${icon('quiz')}Жылдам тест</a>
       </div>
     </article>`;
 }

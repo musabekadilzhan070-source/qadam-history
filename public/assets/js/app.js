@@ -12,6 +12,7 @@ import { testsView } from './views/tests.js';
 import { quizzesView } from './views/quizzes.js';
 import { ubtView, ubtRunView } from './views/ubt.js';
 import { cardsView } from './views/cards.js';
+import { quickView } from './views/quick.js';
 import { achievementsView } from './views/achievements.js';
 import { quizGameView } from './views/quizgame.js';
 import { resultsView, attemptView } from './views/results.js';
@@ -47,6 +48,7 @@ const ROUTES = [
   { re: /^\/periods\/([\w-]+)\/books\/(\d+)\/?$/, nav: 'periods', view: periodBookView },
   { re: /^\/topics\/([\w-]+)\/test\/?$/, nav: 'tests', view: legacyQuizView },
   { re: /^\/tests\/(\d+)\/?$/, nav: 'tests', view: quizView },
+  { re: /^\/quick\/(\d+)\/?$/, nav: 'tests', view: quickView, title: 'Жылдам тест' },
   // Quiz: the game format (its own page, its own progress kept on the server).
   { re: /^\/quiz\/?$/, nav: 'quiz', view: quizzesView, title: 'Quiz' },
   { re: /^\/(?:sinaq|ubt)\/?$/, nav: 'ubt', view: ubtView, title: 'Сынақ тесттер' },
