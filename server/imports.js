@@ -153,7 +153,7 @@ async function importByPeriod(data, grade, publisher, periods) {
 }
 
 // Vercel sets VERCEL_ENV during the build too: `npm run check` clears VERCEL, so test databases never import.
-const enabled = () => process.env.QADAM_IMPORTS === '1' || (process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production');
+export const importsEnabled = () => process.env.QADAM_IMPORTS === '1' || (process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production');
 
 // Titles compared without the «§1–2.» prefix, case, punctuation and Latin/Cyrillic look-alikes (ХVІІІ = XVIII).
 const LOOKALIKE = { х: 'x', і: 'i', в: 'v', с: 'c', о: 'o', а: 'a', е: 'e', р: 'p' };
@@ -164,13 +164,21 @@ export const titleKey = (s) =>
     .replace(/[хівсоаер]/gu, (c) => LOOKALIKE[c])
     .replace(/[^\p{L}\p{N}]+/gu, '');
 
-/** Runs every pack that has not run on this database yet. Never throws: the site keeps working. */
+/**
+ * Runs every pack that has not run on this database yet. Never throws: the site keeps working.
+ * Resolves to true when every pack is done (or imports are off), false when one is still to be retried.
+ */
 export async function runImportsOnce(only = null) {
-  if (!enabled()) return;
+  if (!importsEnabled()) return true;
   try {
-    await runPacks(only ? PACKS.filter((p) => only.includes(p.key)) : PACKS);
+    const packs = only ? PACKS.filter((p) => only.includes(p.key)) : PACKS;
+    await runPacks(packs);
+    const done = await all("SELECT key FROM content_imports WHERE status = 'done'");
+    const keys = new Set(done.map((r) => r.key));
+    return packs.every((p) => keys.has(p.key));
   } catch (err) {
     console.error('[import] skipped:', err);
+    return false;
   }
 }
 

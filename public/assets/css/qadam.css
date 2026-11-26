@@ -2394,7 +2394,8 @@ main:focus {
   background: var(--ok-bg);
   border-radius: 9px;
 }
-.auth-switch {
+.auth-switch,
+.auth-form > .auth-switch {
   margin: 20px 0 0;
   font-size: 14px;
   color: var(--text-2);
@@ -3554,7 +3555,8 @@ body.is-guest main {
 .auth-back:hover {
   color: var(--red);
 }
-.auth-forgot {
+.auth-forgot,
+.auth-form > .auth-forgot {
   margin: -6px 0 18px;
   text-align: right;
   font-size: 13.5px;

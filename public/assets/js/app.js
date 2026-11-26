@@ -94,6 +94,7 @@ export const app = {
     document.title = title ? `${title} · QADAM` : 'QADAM — Қазақстан тарихы';
   },
   setUser(user) {
+    if (user?.id !== app.user?.id) api.forget();
     app.user = user;
     searchIndex = null;
     renderUserSlot();
@@ -212,7 +213,8 @@ async function render() {
   view.innerHTML = loading();
   try {
     const params = path.match(route.re).slice(1).map(decodeURIComponent);
-    const out = await route.view(view, params, app, () => token === renderToken);
+    const { result: out, urls } = await api.track(() => route.view(view, params, app, () => token === renderToken));
+    if (token === renderToken) learn(path, urls);
     if (token === renderToken && typeof out === 'function') cleanup = out;
     if (token === renderToken) liven(view);
   } catch (err) {
@@ -237,13 +239,54 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   if (app.guard && !app.guard()) return;
   if (url.pathname + url.search === location.pathname + location.search) {
-    if ('reload' in a.dataset) return render();
+    if ('reload' in a.dataset) {
+      api.forget();
+      return render();
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
   app.navigate(url.pathname + url.search);
 });
 window.addEventListener('popstate', render);
+
+// What each page asked the server for, so a link can start those requests the moment a finger or
+// the mouse reaches it: by the time the click lands, the page is usually ready.
+const NEEDS_KEY = 'qadam_page_needs';
+let needs = {};
+try {
+  needs = JSON.parse(localStorage.getItem(NEEDS_KEY) || '{}') || {};
+} catch {
+  /* private window */
+}
+function learn(path, urls) {
+  const list = [...urls].slice(0, 6);
+  if (JSON.stringify(needs[path] || []) === JSON.stringify(list)) return;
+  needs[path] = list;
+  const keys = Object.keys(needs);
+  if (keys.length > 80) delete needs[keys[0]];
+  try {
+    localStorage.setItem(NEEDS_KEY, JSON.stringify(needs));
+  } catch {
+    /* full or blocked: the in-memory copy still helps */
+  }
+}
+function warm(e) {
+  if (!app.user) return;
+  const a = e.target.closest?.('a[href]');
+  if (!a || a.target) return;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin || url.pathname === location.pathname) return;
+  const list = needs[url.pathname];
+  if (list?.length) api.prefetch(list);
+}
+document.addEventListener('pointerdown', warm, { passive: true });
+document.addEventListener('touchstart', warm, { passive: true });
+let hoverTimer = null;
+document.addEventListener('mouseover', (e) => {
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => warm(e), 60);
+});
 
 // ─── Topic search in the top bar ─────────────────────────────────
 const searchInput = document.getElementById('search-input');

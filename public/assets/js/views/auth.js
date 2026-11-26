@@ -18,8 +18,8 @@ const keepNext = () => {
   return next ? `?next=${encodeURIComponent(next)}` : '';
 };
 
-function layout({ title, text, form, back = true, live = false }) {
-  // The register page shows the mausoleum drawn in light; the other forms keep the still picture.
+function layout({ title, text, form, back = true, live = true }) {
+  // Every form (sign-in, register, password) shows the mausoleum drawn in light, as on the register page.
   return `
   <div class="panel auth">
     <div class="auth-art${live ? ' is-live' : ''}">
@@ -188,7 +188,6 @@ export function registerView(el, _params, app) {
   el.innerHTML = layout({
     title: 'Тіркелу',
     text: 'Оқушы аккаунтын ашыңыз. Бұл бір минуттан аз уақыт алады.',
-    live: true,
     form: `
       ${field({ name: 'display_name', label: 'Аты-жөніңіз', auto: 'name' })}
       ${field({ name: 'email', label: 'Электрондық пошта', type: 'email', auto: 'email', hint: 'Осы поштамен кіресіз.' })}
