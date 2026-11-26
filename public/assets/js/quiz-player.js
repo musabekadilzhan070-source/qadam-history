@@ -102,7 +102,7 @@ function questionHtml(q, answers, number) {
   const hint = q.type === 'multiple' || q.multiple ? TYPE_HINT.multiple : TYPE_HINT[q.type] || '';
   return `
     <div class="q-block" data-qid="${q.id}">
-      <p class="q-num">${number}${q.points !== 1 ? ` · ${q.points} ұпай` : ''}</p>
+      <p class="q-num">${q.level ? `<i class="lv lv-${esc(q.level)}" title="${esc(q.level)} деңгейі">${esc(q.level)}</i>` : ''}${number}${q.points !== 1 ? ` · ${q.points} ұпай` : ''}</p>
       <h2 class="q-text">${esc(q.text)}</h2>
       ${q.image_id ? `<img class="q-image" src="${fileUrl(q.image_id)}" alt="Сұрақтың суреті" />` : ''}
       ${hint ? `<p class="q-hint">${hint}</p>` : ''}

@@ -6576,7 +6576,7 @@ html.reader-full-open body {
   }
 }
 
-/* ─── ҰБТ сынақ ───────────────────────────────────────────────── */
+/* ─── Сынақ тесттер ──────────────────────────────────────────────── */
 .ubt-start,
 .ubt-stats,
 .ubt-card,
@@ -6894,6 +6894,378 @@ html.reader-full-open body {
   flex: none;
   width: 18px;
   height: 18px;
+}
+
+/* Сынақ тесттер: levels, variants */
+.lv {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--white);
+  vertical-align: middle;
+  background: var(--ok);
+  border-radius: 7px;
+}
+.lv-B {
+  background: #c27a12;
+}
+.lv-C {
+  background: var(--red);
+}
+.lv-t {
+  color: var(--text);
+  background: var(--canvas);
+}
+.lv-t .icon {
+  width: 15px;
+  height: 15px;
+}
+.q-num .lv,
+.review-item h3 .lv {
+  width: 22px;
+  height: 22px;
+  font-size: 11.5px;
+}
+.ubt-rules-panel {
+  margin-bottom: 8px;
+}
+.ubt-levels-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.ubt-levels-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.ubt-levels-list .lv {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+.ubt-levels-list span {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.ubt-levels-list b {
+  font-size: 15px;
+  color: var(--text);
+}
+.ubt-variants {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ubt-variants button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 10px 14px;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.ubt-variants button:hover,
+.ubt-variants button:focus-visible {
+  border-color: var(--text);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.uv-num {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  color: var(--white);
+  background: var(--ink);
+  border-radius: 14px;
+}
+.is-done .uv-num {
+  background: var(--red);
+}
+.uv-num small {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.uv-num b {
+  margin-top: -6px;
+  font-size: 24px;
+  font-weight: 900;
+}
+.uv-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.uv-body b {
+  font-size: 14.5px;
+}
+.uv-body small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.uv-bar {
+  height: 6px;
+  overflow: hidden;
+  background: var(--canvas);
+  border-radius: 99px;
+}
+.uv-bar i {
+  display: block;
+  width: var(--w);
+  height: 100%;
+  background: var(--ok);
+  border-radius: inherit;
+}
+.uv-go {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--white);
+  background: var(--red);
+  border-radius: 10px;
+}
+.is-done .uv-go {
+  color: var(--text);
+  background: var(--canvas);
+}
+.uv-go .icon {
+  width: 16px;
+  height: 16px;
+}
+.ubt-mine {
+  margin-top: 26px;
+}
+.ubt-mine-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 32px;
+}
+.ubt-levels li {
+  grid-template-columns: minmax(150px, 1.4fr) minmax(80px, 1fr) 92px;
+}
+.ubt-levels .ubt-p-name {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0;
+}
+.ubt-levels .ubt-p-name small {
+  grid-column: 2;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.ubt-levels .ubt-p-name .lv {
+  grid-row: span 2;
+  font-size: 12px;
+  color: var(--white);
+}
+@media (max-width: 900px) {
+  .ubt-levels-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ubt-mine-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .ubt-levels-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .ubt-levels-list li {
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+  .ubt-levels-list span {
+    font-size: 12px;
+  }
+  .ubt-variants {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .ubt-variants button {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px;
+  }
+  .uv-num {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+  }
+  .uv-num b {
+    font-size: 20px;
+  }
+  .uv-body b {
+    font-size: 13px;
+  }
+  .uv-body small {
+    font-size: 11.5px;
+  }
+  .uv-go {
+    min-height: 36px;
+  }
+  .ubt-levels li {
+    grid-template-columns: minmax(0, 1fr) 78px;
+  }
+  .ubt-levels .ubt-p-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Карточкалар: two sections and the textbook source */
+.cards-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.cards-tab {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: var(--white);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cards-tab:hover {
+  border-color: var(--text-2);
+}
+.cards-tab[aria-pressed='true'] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgb(179 22 31 / 0.1);
+}
+.ct-icon .icon {
+  width: 44px;
+  height: 44px;
+  padding: 11px;
+  color: var(--text);
+  background: var(--canvas);
+  border-radius: 12px;
+}
+.cards-tab[aria-pressed='true'] .ct-icon .icon {
+  color: var(--white);
+  background: var(--red);
+}
+.ct-body,
+.ct-num {
+  display: grid;
+  gap: 2px;
+}
+.ct-body b {
+  font-size: 18px;
+  font-weight: 900;
+}
+.ct-body small,
+.ct-num small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ct-num {
+  text-align: right;
+}
+.ct-num b {
+  font-size: 22px;
+  font-weight: 900;
+}
+.fc-src,
+.cl-src {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.fc-src {
+  max-width: 460px;
+  margin-top: 4px;
+  justify-content: center;
+  text-align: left;
+}
+.fc-src .icon,
+.cl-src .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+@media (max-width: 600px) {
+  .cards-tab {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+  .ct-body small {
+    display: none;
+  }
+  .ct-body b {
+    font-size: 16px;
+  }
+  .ct-num {
+    grid-column: 2;
+    text-align: left;
+  }
+  .ct-num b {
+    font-size: 14px;
+  }
+  .ct-icon .icon {
+    width: 38px;
+    height: 38px;
+    padding: 9px;
+  }
 }
 
 /* ─── Карточкалар ─────────────────────────────────────────────── */

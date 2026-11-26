@@ -1,7 +1,8 @@
 import { org } from './api.js';
 import { esc, icon, toast, dialog, confirmDialog, input, textarea, select, toggle, formValues, busy } from './ui.js';
+import { reviewList } from '../views/review.js';
 
-// «Карточкалар» and «ҰБТ сынақ» in the cabinet. Cards and the mock settings are live: a save
+// «Карточкалар» and «Сынақ тесттер» in the cabinet. Cards and the mock settings are live: a save
 // reaches the students at once, without «Жариялау».
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -34,6 +35,7 @@ export async function cardsAdminView(el, _params, _ctx, alive) {
       ${input({ name: 'front', label: 'Алдыңғы беті (дата немесе есім)', value: c.front || '', max: 120, required: true, hint: 'Мысалы: 1465 немесе Абылай хан' })}
       ${textarea({ name: 'back', label: 'Артқы беті (оқиға немесе кім екені)', value: c.back || '', rows: 2, max: 300, required: true })}
       ${textarea({ name: 'note', label: 'Қосымша түсінік', value: c.note || '', rows: 2, max: 500, hint: 'Міндетті емес. Карточка аударылғанда төменде шығады.' })}
+      ${input({ name: 'source', label: 'Дереккөзі (кітап, бет)', value: c.source || '', max: 300, hint: 'Мысалы: Қазақстан тарихы, 10-сынып (Мектеп, 2019), 139-бет. Карточканың астында кішкене жазумен шығады.' })}
       ${select({ name: 'period_number', label: 'Кезең', value: c.period_number ?? (period || ''), options: [{ value: '', label: 'Кезеңсіз' }, ...data.periods.map((p) => ({ value: p.number, label: `${pad2(p.number)} · ${p.title}` }))] })}
       ${toggle({ name: 'published', label: 'Оқушыларға көрсету', checked: c.published !== false })}
     </form>`;
@@ -82,7 +84,7 @@ export async function cardsAdminView(el, _params, _ctx, alive) {
       (c) =>
         (!kind || c.kind === kind) &&
         (!period || String(c.period_number ?? '') === period) &&
-        (!search || `${c.front} ${c.back} ${c.note}`.toLocaleLowerCase('kk').includes(search)),
+        (!search || `${c.front} ${c.back} ${c.note} ${c.source}`.toLocaleLowerCase('kk').includes(search)),
     );
 
   function row(c) {
@@ -92,6 +94,7 @@ export async function cardsAdminView(el, _params, _ctx, alive) {
         <b>${esc(c.front)}</b>
         <span>${esc(c.back)}</span>
         ${c.note ? `<small class="o-muted">${esc(c.note)}</small>` : ''}
+        ${c.source ? `<small class="o-cardrow-src">${icon('materials')} ${esc(c.source)}</small>` : ''}
         ${c.learned_by ? `<small class="o-cardrow-learned">${icon('check')} ${c.learned_by} оқушы меңгерді</small>` : ''}
       </div>
       <div class="o-row-actions">
@@ -183,49 +186,74 @@ export async function cardsAdminView(el, _params, _ctx, alive) {
   });
 }
 
-// ─── ҰБТ сынақ ───────────────────────────────────────────────────
+// ─── Сынақ тесттер ──────────────────────────────────────────────────
+const LEVEL_TEXT = { A: 'А деңгейі: дерек, 1 балл', B: 'В деңгейі: түсіну, 1 балл', C: 'С деңгейі: бірнеше жауап, сәйкестендіру, реттілік, 2 балл' };
+
 export async function mockAdminView(el, _params, _ctx, alive) {
   let data = await org.get('/practice/mock');
   if (!alive()) return;
+  let open = null; // the variant read through below, with its answers
+
+  const pname = (n) => data.periods.find((p) => p.number === Number(n))?.title || `${n}-кезең`;
 
   function draw() {
-    const { settings, periods, runs } = data;
-    const pool = periods.reduce((s, p) => s + p.questions, 0);
+    const { settings, runs, variants } = data;
     const avg = runs.length ? Math.round((runs.reduce((s, r) => s + r.score / Math.max(1, r.max_score), 0) / runs.length) * 100) : 0;
+    const shape = variants[0];
     el.innerHTML = `
-      <div class="o-toolbar"><a class="btn btn-ghost" href="/ubt" target="_blank" rel="noopener">Оқушы көрінісі</a></div>
+      <div class="o-toolbar"><a class="btn btn-ghost" href="/sinaq" target="_blank" rel="noopener">Оқушы көрінісі</a></div>
       ${LIVE_NOTE}
       <div class="o-mock-grid">
         <section class="o-card">
           <div class="o-card-head"><h2>Сынақ баптаулары</h2></div>
           <form class="o-form" data-mock-form>
-            ${input({ name: 'question_count', label: 'Сұрақ саны', type: 'number', value: settings.question_count, hint: `5-тен 60-қа дейін. Әдепкі: ${data.defaults.question_count}.` })}
-            ${input({ name: 'time_min', label: 'Уақыт (минут)', type: 'number', value: settings.time_min, hint: `5-тен 180-ге дейін. Әдепкі: ${data.defaults.time_min}.` })}
-            <p class="o-muted">Сұрақтар барлық кезеңнің жарияланған тесттерінен (Quiz емес) аралас алынады. Әр кезеңнен шамамен бірдей.</p>
+            ${input({ name: 'time_min', label: 'Бір нұсқаға уақыт (минут)', type: 'number', value: settings.time_min, hint: `10-нан 240-қа дейін. Әдепкі: ${data.defaults.time_min}.` })}
+            <p class="o-muted">Әр нұсқада ${shape.questions} сұрақ, ең жоғары балл — ${shape.max_score}. С деңгейінде толық жауап 2 балл, бір қатемен 1 балл.</p>
             <div><button type="submit" class="btn" data-save>Сақтау</button></div>
           </form>
         </section>
         <section class="o-card">
-          <div class="o-card-head"><h2>Сұрақ қоры <span class="o-count">${pool}</span></h2></div>
-          ${pool < settings.question_count ? `<p class="o-alert o-alert-warn">${icon('info')} Қорда ${pool} сұрақ бар, сынаққа ${settings.question_count} керек. Сынақ ${pool} сұрақпен өтеді.</p>` : ''}
-          <ul class="o-mock-pool">${periods
-            .map((p) => `<li><span>${pad2(p.number)} · ${esc(p.title)}</span><b>${p.questions}</b></li>`)
-            .join('')}</ul>
-          <p class="o-muted">Тек бір дұрыс жауабы бар сұрақтар алынады (сурет сұрақтары да).</p>
+          <div class="o-card-head"><h2>Нұсқа құрылымы</h2></div>
+          <ul class="o-mock-pool">
+            ${['A', 'B', 'C'].map((l) => `<li><span>${esc(LEVEL_TEXT[l])}</span><b>${shape.levels[l] || 0}</b></li>`).join('')}
+            ${Object.entries(shape.periods).map(([n, c]) => `<li><span>${pad2(n)} · ${esc(pname(n))}</span><b>${c}</b></li>`).join('')}
+          </ul>
+          <p class="o-muted">Сұрақтар сайттағы оқулық тесттерінен құралып, әрқайсысы жауабымен тексерілген. Түсініктемесінде оқулық пен беті көрсетілген. Нұсқалар арасында сұрақ қайталанбайды.</p>
         </section>
       </div>
+      <section class="o-card o-card-tight">
+        <div class="o-card-head"><h2>Нұсқалар <span class="o-count">${variants.length}</span></h2></div>
+        <ul class="o-variants">
+          ${variants
+            .map(
+              (v) => `<li><button type="button" class="${open?.number === v.number ? 'is-open' : ''}" data-variant="${v.number}">
+                <b>${v.number}-нұсқа</b><small>${v.tries ? `${v.tries} рет тапсырылды · орташа ${v.average_percent}%` : 'Әлі тапсырылмаған'}</small></button></li>`,
+            )
+            .join('')}
+        </ul>
+        <p class="o-muted">Нұсқаны басып, сұрақтарын дұрыс жауабымен қараңыз.</p>
+      </section>
+      ${
+        open
+          ? `<section class="o-card o-card-tight o-variant-read">
+              <div class="o-card-head"><h2>${open.number}-нұсқа: сұрақтар мен жауаптар</h2><button type="button" class="btn btn-sm btn-ghost" data-close>Жабу</button></div>
+              ${reviewList(open.items)}
+            </section>`
+          : ''
+      }
       <section class="o-card o-card-tight">
         <div class="o-card-head"><h2>Тапсырылған сынақтар <span class="o-count">${runs.length}</span></h2></div>
         ${runs.length ? `<p class="o-muted">Орташа нәтиже: ${avg}%</p>` : ''}
         ${
           runs.length
             ? `<div class="o-table-wrap"><table class="o-table">
-                <thead><tr><th>Оқушы</th><th>Күні</th><th>Балл</th><th>Дұрыс</th><th>Уақыт</th></tr></thead>
+                <thead><tr><th>Оқушы</th><th>Күні</th><th>Нұсқа</th><th>Балл</th><th>Дұрыс</th><th>Уақыт</th></tr></thead>
                 <tbody>${runs
                   .map(
                     (r) => `<tr>
                       <td><b>${esc(r.display_name)}</b><br /><small class="o-muted">${esc(r.email || '')}</small></td>
                       <td>${esc(when(r.created_at))}</td>
+                      <td>${r.variant ? `${r.variant}-нұсқа` : '<small class="o-muted">ескі сынақ</small>'}</td>
                       <td><b>${num(r.score)}</b> / ${num(r.max_score)}</td>
                       <td>${r.correct} / ${r.total} · ${Math.round((r.correct / Math.max(1, r.total)) * 100)}%</td>
                       <td>${duration(r.duration_sec)}</td>
@@ -240,11 +268,32 @@ export async function mockAdminView(el, _params, _ctx, alive) {
       e.preventDefault();
       busy(form.querySelector('[data-save]'), async () => {
         const v = formValues(form);
-        const r = await org.put('/practice/mock', { question_count: Number(v.question_count), time_min: Number(v.time_min) });
+        const r = await org.put('/practice/mock', { time_min: Number(v.time_min) });
         data.settings = r.settings;
-        toast(`Сақталды: ${r.settings.question_count} сұрақ, ${r.settings.time_min} минут`);
+        toast(`Сақталды: ${r.settings.time_min} минут`);
         draw();
       });
+    });
+    el.querySelectorAll('[data-variant]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const n = Number(b.dataset.variant);
+        if (open?.number === n) open = null;
+        else {
+          try {
+            open = await org.get(`/practice/mock/variants/${n}`);
+          } catch (err) {
+            toast(err.message, 'error');
+            return;
+          }
+        }
+        if (!alive()) return;
+        draw();
+        el.querySelector('.o-variant-read')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }),
+    );
+    el.querySelector('[data-close]')?.addEventListener('click', () => {
+      open = null;
+      draw();
     });
   }
   draw();

@@ -33,7 +33,7 @@ export const TEXT_FIELDS = [
     ['nav_periods', 'Тарихи кезеңдер', 'Тарихи кезеңдер'],
     ['nav_tests', 'Тесттер', 'Тесттер'],
     ['nav_quiz', 'Quiz', 'Quiz'],
-    ['nav_ubt', 'ҰБТ сынақ', 'ҰБТ сынақ'],
+    ['nav_ubt', 'Сынақ тесттер', 'Сынақ тесттер'],
     ['nav_cards', 'Карточкалар', 'Карточкалар'],
     ['nav_books', 'Кітаптар', 'Кітаптар'],
     ['nav_results', 'Менің нәтижелерім', 'Менің нәтижелерім'],
@@ -56,7 +56,7 @@ export const ICON_SLOTS = [
   ['nav.periods', 'Мәзір: Тарихи кезеңдер', 'periods'],
   ['nav.tests', 'Мәзір: Тесттер', 'tests'],
   ['nav.quiz', 'Мәзір: Quiz', 'quiz'],
-  ['nav.ubt', 'Мәзір: ҰБТ сынақ', 'exam'],
+  ['nav.ubt', 'Мәзір: Сынақ тесттер', 'exam'],
   ['nav.cards', 'Мәзір: Карточкалар', 'cards'],
   ['nav.books', 'Мәзір: Кітаптар', 'materials'],
   ['nav.results', 'Мәзір: Менің нәтижелерім', 'results'],
@@ -93,6 +93,8 @@ export const site = {
     try {
       const data = await api.get('/api/site');
       site.texts = data.texts || {};
+      // The menu item was renamed from «ҰБТ сынақ»: a saved copy of the old wording follows the new name.
+      if (site.texts.nav_ubt === 'ҰБТ сынақ') delete site.texts.nav_ubt;
       site.icons = data.icons || {};
     } catch {
       site.texts = {};

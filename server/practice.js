@@ -6,10 +6,12 @@ import { forStudent, grade } from './questions.js';
 import { makeToken, readToken } from './quiz.js';
 import { dayOf } from './almaty.js';
 import { DATE_CARDS, PERSON_CARDS } from './seed/cards.js';
+import { VARIANTS } from './seed/variants.js';
+import { rowsToQuestions } from './transfer.js';
 
 // Three ways to practise beside the tests:
-//   ҰБТ сынақ   a mock exam in the format of the national exam: single-choice questions mixed from
-//               the classic tests of every period, one point each, a time limit, the score per period.
+//   Сынақ тесттер ten fixed variants of 50 questions (levels A, B, C) in the manner of the ҰБТ,
+//               a time limit, the score per level and per period.
 //   Карточкалар dates and persons to learn by heart, repeated in Leitner boxes.
 //   Жетістіктер badges earned for the work done on the site.
 
@@ -29,178 +31,169 @@ const int = (v, min, max, dflt) => {
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : dflt;
 };
 
-// ─── ҰБТ сынақ ─────────────────────────────────────────────────────
-// In the ҰБТ «Қазақстан тарихы» has 20 single-choice tasks, one point each. The exam gives about
-// two minutes a task, so 20 tasks get 40 minutes. The organizer can change both numbers.
-export const MOCK_DEFAULTS = { question_count: 20, time_min: 40 };
+// ─── Сынақ тесттер ──────────────────────────────────────────────────
+// Ten fixed variants of 50 questions in the manner of the ҰБТ (server/seed/variants.js): level A
+// (25 questions, a fact), level B (15, understanding), level C (10: several answers, matching or
+// ordering). A and B give 1 point; C gives 2 for a full answer and 1 for an answer with one slip,
+// as in the ҰБТ, so a variant gives 60 points. The organizer sets the time.
+export const MOCK_DEFAULTS = { time_min: 100 };
 const MOCK_GRACE_SEC = 90;
+export const LEVELS = ['A', 'B', 'C'];
+export const LEVEL_TITLES = { A: 'А деңгейі', B: 'В деңгейі', C: 'С деңгейі' };
 
 export async function mockSettings() {
   const row = await get("SELECT value FROM settings WHERE key = 'mock'");
   const s = { ...MOCK_DEFAULTS, ...parse(row?.value, {}) };
-  return { question_count: int(s.question_count, 5, 60, 20), time_min: int(s.time_min, 5, 180, 40) };
+  // Settings saved before the variants had a 40-minute default for 20 questions.
+  const time = s.question_count !== undefined && !s.variants ? MOCK_DEFAULTS.time_min : s.time_min;
+  return { time_min: int(time, 10, 240, MOCK_DEFAULTS.time_min) };
 }
 
-const SETTINGS = { shuffle_options: true, show_answers: true, partial_credit: false, pass_percent: 0 };
-const norm = (s) => String(s || '').toLocaleLowerCase('kk').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const SETTINGS = { shuffle_options: true, show_answers: true, partial_credit: true, pass_percent: 0 };
+const ROW_HEADER = ['Түрі', 'Сұрақ мәтіні', 'Нұсқа 1', 'Нұсқа 2', 'Нұсқа 3', 'Нұсқа 4', 'Дұрыс жауап', 'Ұпай', 'Түсініктеме'];
 
-// The pool of a published snapshot: every single-choice question of the classic tests (one correct
-// option, not inside a reading context), once per wording, with the period it belongs to.
-const pools = new WeakMap();
-function poolOf(snap) {
-  if (pools.has(snap)) return pools.get(snap);
-  const periodOfTopic = new Map(snap.topics.map((t) => [t.id, t.period_id]));
-  const seen = new Set();
-  const byId = new Map();
-  const byPeriod = new Map(snap.periods.map((p) => [p.id, []]));
-  for (const test of snap.tests) {
-    const periodId = periodOfTopic.get(test.topic_id);
-    if (!byPeriod.has(periodId)) continue;
-    for (const q of test.questions) {
-      if (!['single', 'image'].includes(q.type)) continue;
-      if (q.options.filter((o) => o.is_correct).length !== 1 || q.options.length < 2) continue;
-      const key = `${norm(q.text)}|${q.image_id || ''}`;
-      if (!norm(q.text) && !q.image_id) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const item = { q: { ...q, points: 1 }, periodId, topicId: test.topic_id };
-      byId.set(q.id, item);
-      byPeriod.get(periodId).push(item);
+/** The variants as questions of the cabinet model, with stable ids (variant × 100 + place). */
+function buildVariants() {
+  return VARIANTS.map((v) => {
+    const { questions, errors } = rowsToQuestions([ROW_HEADER, ...v.questions.map((x) => x.row)]);
+    if (errors.length || questions.length !== v.questions.length) {
+      throw new Error(`Сынақ тест ${v.number}-нұсқа: ${errors[0]?.message || 'сұрақ саны сәйкес емес'}`);
     }
-  }
-  const pool = { byId, byPeriod };
-  pools.set(snap, pool);
-  return pool;
+    const items = questions.map((q, i) => {
+      const id = v.number * 100 + i + 1;
+      const { row: _row, ...rest } = q;
+      const question = { ...rest, id, options: q.options.map((o, j) => ({ ...o, id: id * 10 + j + 1 })) };
+      if (q.type === 'matching') question.data = { pairs: q.data.pairs.map((p, j) => ({ ...p, key: `p${j + 1}` })) };
+      if (q.type === 'ordering') question.data = { items: q.data.items.map((it, j) => ({ ...it, key: `e${j + 1}` })) };
+      return { q: question, level: v.questions[i].level, period: v.questions[i].period };
+    });
+    return { number: v.number, items, byId: new Map(items.map((x) => [x.q.id, x])) };
+  });
 }
+let built = null;
+export const mockVariants = () => (built ||= buildVariants());
+const variantOf = (n) => mockVariants().find((v) => v.number === Number(n));
 
-function shuffle(list) {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i -= 1) {
-    const j = crypto.randomInt(i + 1);
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+const countBy = (list, key) => list.reduce((m, x) => ((m[x[key]] = (m[x[key]] || 0) + 1), m), {});
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const maxOf = (items) => items.reduce((s, x) => s + x.q.points, 0);
 
-/** Picks the questions of a new exam: spread evenly over the periods, fresh ones first, in period order. */
-export function pickMock(snap, count, recentIds = new Set()) {
-  const { byPeriod } = poolOf(snap);
-  const periods = snap.periods.filter((p) => byPeriod.get(p.id)?.length).sort((a, b) => a.number - b.number);
-  if (!periods.length) return [];
-  // Each period's share; what a small period cannot give goes to the others.
-  const want = new Map(periods.map((p) => [p.id, 0]));
-  let left = count;
-  while (left > 0) {
-    const open = periods.filter((p) => want.get(p.id) < byPeriod.get(p.id).length);
-    if (!open.length) break;
-    for (const p of open) {
-      if (left <= 0) break;
-      want.set(p.id, want.get(p.id) + 1);
-      left -= 1;
-    }
-  }
-  const picked = [];
-  for (const p of periods) {
-    const list = byPeriod.get(p.id);
-    const fresh = shuffle(list.filter((x) => !recentIds.has(x.q.id)));
-    const old = shuffle(list.filter((x) => recentIds.has(x.q.id)));
-    picked.push(...[...fresh, ...old].slice(0, want.get(p.id)));
-  }
-  return picked;
-}
-
-async function recentMockIds(userId) {
-  const rows = await all('SELECT question_ids FROM mock_runs WHERE user_id = ? ORDER BY id DESC LIMIT 3', userId);
-  return new Set(rows.flatMap((r) => parse(r.question_ids, [])));
-}
-
-export async function mockInfo(userId) {
+async function periodList() {
   const snap = await published();
-  const { byPeriod } = poolOf(snap);
-  const settings = await mockSettings();
-  const runs = await all(
-    'SELECT id, correct, total, score, max_score, by_period, duration_sec, created_at FROM mock_runs WHERE user_id = ? ORDER BY id DESC LIMIT 30',
-    userId,
-  );
-  const pool = [...byPeriod.values()].reduce((s, l) => s + l.length, 0);
+  return snap.periods.slice().sort((a, b) => a.number - b.number).map((p) => ({ number: p.number, title: p.title, slug: p.slug }));
+}
+
+/** Grades a variant: A and B right or wrong, C with 2 / 1 / 0 points. Sums per level and period. */
+export function gradeVariant(variant, answers, periods = []) {
+  const ids = variant.items.map((x) => x.q.id);
+  const result = grade({ questions: variant.items.map((x) => x.q) }, ids, answers, SETTINGS);
+  for (const it of result.items) {
+    const meta = variant.byId.get(it.id);
+    it.level = meta.level;
+    it.period = meta.period;
+    if (meta.level === 'C') {
+      const part = it.points ? it.earned / it.points : 0;
+      it.earned = it.is_correct ? it.points : part >= 0.5 ? 1 : 0;
+    } else it.earned = it.is_correct ? it.points : 0;
+  }
+  const score = result.items.reduce((s, i) => s + i.earned, 0);
+  const max = result.items.reduce((s, i) => s + i.points, 0);
+  const sum = (list) => ({
+    correct: list.filter((i) => i.is_correct).length,
+    total: list.length,
+    score: list.reduce((s, i) => s + i.earned, 0),
+    max_score: list.reduce((s, i) => s + i.points, 0),
+  });
+  const titles = new Map(periods.map((p) => [p.number, p]));
+  const numbers = [...new Set(result.items.map((i) => i.period))].sort((a, b) => a - b);
   return {
-    settings,
-    pool,
-    ready: pool >= Math.min(settings.question_count, 5),
-    periods: snap.periods
-      .slice()
-      .sort((a, b) => a.number - b.number)
-      .map((p) => ({ id: p.id, number: p.number, title: p.title, slug: p.slug, questions: byPeriod.get(p.id)?.length || 0 })),
-    runs: runs.map((r) => ({ ...r, by_period: parse(r.by_period, []) })),
+    ...result,
+    score,
+    max_score: max,
+    percent: max ? Math.round((score / max) * 100) : 0,
+    by_level: LEVELS.map((l) => ({ level: l, title: LEVEL_TITLES[l], ...sum(result.items.filter((i) => i.level === l)) })),
+    by_period: numbers.map((n) => ({
+      number: n,
+      title: titles.get(n)?.title || PERIOD_NAMES[n] || `${n}-кезең`,
+      slug: titles.get(n)?.slug || null,
+      ...sum(result.items.filter((i) => i.period === n)),
+    })),
   };
 }
 
-export async function startMock(userId) {
-  const snap = await published();
+/** A variant's make-up: questions per level and per period. */
+function variantShape(v) {
+  return { number: v.number, questions: v.items.length, max_score: maxOf(v.items), levels: countBy(v.items, 'level'), periods: countBy(v.items, 'period') };
+}
+
+export async function mockInfo(userId) {
   const settings = await mockSettings();
-  const picked = pickMock(snap, settings.question_count, await recentMockIds(userId));
-  if (picked.length < Math.min(settings.question_count, 5)) fail(409, 'ҰБТ сынағына сұрақ әзірге жеткіліксіз.');
+  const runs = await all(
+    'SELECT id, variant, correct, total, score, max_score, by_period, by_level, duration_sec, created_at FROM mock_runs WHERE user_id = ? ORDER BY id DESC LIMIT 50',
+    userId,
+  );
+  const list = runs.map((r) => ({ ...r, by_period: parse(r.by_period, []), by_level: parse(r.by_level, []) }));
+  return {
+    settings,
+    periods: await periodList(),
+    variants: mockVariants().map((v) => {
+      const mine = list.filter((r) => r.variant === v.number);
+      const best = mine.reduce((m, r) => (!m || r.score > m.score ? r : m), null);
+      return { ...variantShape(v), tries: mine.length, best: best && { id: best.id, score: best.score, max_score: best.max_score, percent: pct(best.score, best.max_score) } };
+    }),
+    runs: list,
+  };
+}
+
+export async function startMock(userId, body) {
+  const v = variantOf(body?.variant);
+  if (!v) fail(400, 'Сынақ тесттің нұсқасын таңдаңыз.');
+  const settings = await mockSettings();
   const nonce = crypto.randomBytes(12).toString('base64url');
-  const ids = picked.map((x) => x.q.id);
-  const token = await makeToken({ m: 1, u: userId, q: ids, s: Date.now(), n: nonce, l: settings.time_min * 60 });
+  const token = await makeToken({ m: 2, u: userId, v: v.number, s: Date.now(), n: nonce, l: settings.time_min * 60 });
   return {
     token,
-    units: picked.map((x) => forStudent(x.q, SETTINGS)),
-    question_count: ids.length,
-    max_score: ids.length,
+    variant: v.number,
+    units: v.items.map((x) => ({ ...forStudent(x.q, SETTINGS), level: x.level })),
+    question_count: v.items.length,
+    max_score: maxOf(v.items),
     time_limit_sec: settings.time_min * 60,
     question_time_sec: 0,
   };
 }
 
-/** Grades stored or new answers against the current snapshot; questions no longer published are left out. */
-function gradeMock(snap, ids, answers) {
-  const { byId } = poolOf(snap);
-  const items = ids.map((id) => byId.get(id)).filter(Boolean);
-  const result = grade({ questions: items.map((x) => x.q) }, items.map((x) => x.q.id), answers, SETTINGS);
-  const periods = snap.periods.slice().sort((a, b) => a.number - b.number);
-  const byPeriod = periods
-    .map((p) => {
-      const mine = result.items.filter((it) => byId.get(it.id)?.periodId === p.id);
-      return { period_id: p.id, number: p.number, title: p.title, slug: p.slug, correct: mine.filter((i) => i.is_correct).length, total: mine.length };
-    })
-    .filter((p) => p.total > 0);
-  // Each review item says which topic it came from, so a student knows what to read again.
-  const topicTitle = new Map(snap.topics.map((t) => [t.id, t]));
-  for (const it of result.items) {
-    const t = topicTitle.get(byId.get(it.id)?.topicId);
-    if (t) it.topic = { title: t.title, slug: t.slug };
-  }
-  return { ...result, by_period: byPeriod };
-}
-
 export async function submitMock(userId, body) {
   const session = await readToken(body?.token);
-  if (!session || session.m !== 1 || session.u !== userId) fail(400, 'Сынақ сессиясы жарамсыз. Сынақты қайта бастаңыз.');
+  if (!session || session.m !== 2 || session.u !== userId) fail(400, 'Сынақ сессиясы жарамсыз. Сынақты қайта бастаңыз.');
+  const v = variantOf(session.v);
+  if (!v) fail(400, 'Сынақ тесттің нұсқасы табылмады. Сынақты қайта бастаңыз.');
   const elapsed = Math.max(0, Math.round((Date.now() - session.s) / 1000));
   if (session.l && elapsed > session.l + MOCK_GRACE_SEC) fail(400, 'Сынақ уақыты әлдеқашан аяқталған. Сынақты қайта бастаңыз.');
-  const snap = await published();
   const answers = body?.answers && typeof body.answers === 'object' ? body.answers : {};
-  const r = gradeMock(snap, session.q, answers);
+  const r = gradeVariant(v, answers, await periodList());
   const stored = Object.fromEntries(r.stored.map(({ question, answer }) => [question.id, answer]));
   const already = await get('SELECT id FROM mock_runs WHERE nonce = ?', session.n);
   let id = already?.id;
   if (!id) {
     const res = await run(
-      `INSERT INTO mock_runs (user_id, nonce, question_ids, answers, correct, total, score, max_score, by_period, duration_sec)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(nonce) DO NOTHING`,
-      userId, session.n, JSON.stringify(session.q), JSON.stringify(stored), r.correct, r.total, r.score, r.max_score,
-      JSON.stringify(r.by_period), Math.min(elapsed, 6 * 3600),
+      `INSERT INTO mock_runs (user_id, nonce, variant, question_ids, answers, correct, total, score, max_score, by_period, by_level, duration_sec)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(nonce) DO NOTHING`,
+      userId, session.n, v.number, JSON.stringify(v.items.map((x) => x.q.id)), JSON.stringify(stored), r.correct, r.total, r.score, r.max_score,
+      JSON.stringify(r.by_period), JSON.stringify(r.by_level), Math.min(elapsed, 6 * 3600),
     );
     id = res.lastInsertRowid ? Number(res.lastInsertRowid) : (await get('SELECT id FROM mock_runs WHERE nonce = ?', session.n))?.id;
   }
-  return mockResult(userId, id, r, elapsed);
+  return mockResult(userId, id, v.number, r, elapsed);
 }
 
-async function mockResult(userId, id, r, duration) {
-  const prev = await get('SELECT MAX(score) AS best, COUNT(*) AS n FROM mock_runs WHERE user_id = ? AND id < ?', userId, id);
+async function mockResult(userId, id, variant, r, duration) {
+  const prev = await get(
+    'SELECT MAX(score) AS best, COUNT(*) AS n FROM mock_runs WHERE user_id = ? AND id < ? AND variant IS ?',
+    userId, id, variant,
+  );
   return {
     id,
+    variant,
     correct: r.correct,
     total: r.total,
     score: r.score,
@@ -208,6 +201,7 @@ async function mockResult(userId, id, r, duration) {
     percent: r.percent,
     duration_sec: duration,
     by_period: r.by_period,
+    by_level: r.by_level || [],
     previous_best: prev?.n ? prev.best : null,
     items: r.items,
   };
@@ -216,12 +210,13 @@ async function mockResult(userId, id, r, duration) {
 export async function mockRun(userId, id) {
   const row = await get('SELECT * FROM mock_runs WHERE id = ? AND user_id = ?', id, userId);
   if (!row) fail(404, 'Сынақ нәтижесі табылмады.');
-  const snap = await published();
-  const r = gradeMock(snap, parse(row.question_ids, []), parse(row.answers, {}));
-  // The saved score stays as it was on the day; the review shows the questions still published.
+  const v = variantOf(row.variant);
+  // An exam sat before the variants (random questions) keeps only its score.
+  const r = v ? gradeVariant(v, parse(row.answers, {}), await periodList()) : { items: [], by_level: [] };
   const saved = { ...r, correct: row.correct, total: row.total, score: row.score, max_score: row.max_score, by_period: parse(row.by_period, []) };
-  saved.percent = row.max_score ? Math.round((row.score / row.max_score) * 100) : 0;
-  return { ...(await mockResult(userId, row.id, saved, row.duration_sec)), created_at: row.created_at };
+  saved.percent = pct(row.score, row.max_score);
+  if (v) saved.by_level = r.by_level;
+  return { ...(await mockResult(userId, row.id, row.variant ?? null, saved, row.duration_sec)), created_at: row.created_at };
 }
 
 // ─── Карточкалар ──────────────────────────────────────────────────
@@ -232,21 +227,29 @@ const BOX_DAYS = [0, 1, 2, 4, 8, 16];
 export const LEARNED_BOX = 4;
 
 let seeding = null;
-/** Adds the first set of cards once, when the site has never had any. */
+// 'cards_seeded_v2': the set made from the textbooks (each card with its book and page). It takes the
+// place of the first set: cards of that set the organizer never edited are removed with their progress;
+// cards the organizer added or edited stay. Every statement checks the key, so two cold starts at once
+// add the set only once.
+const SEED_KEY = 'cards_seeded_v2';
+const NOT_SEEDED = `NOT EXISTS (SELECT 1 FROM settings WHERE key = '${SEED_KEY}')`;
+const FIRST_SET = `SELECT id FROM fact_cards WHERE source = '' AND updated_at = created_at
+  AND created_at = (SELECT MIN(created_at) FROM fact_cards) AND EXISTS (SELECT 1 FROM settings WHERE key = 'cards_seeded')`;
+
+/** Adds the textbook set of cards once. */
 export function ensureCards() {
   seeding ||= (async () => {
-    const done = await get("SELECT value FROM settings WHERE key = 'cards_seeded'");
-    if (done) return;
-    const has = await get('SELECT 1 AS ok FROM fact_cards LIMIT 1');
+    if (await get(`SELECT 1 AS ok FROM settings WHERE key = '${SEED_KEY}'`)) return;
     const rows = [...DATE_CARDS.map((c) => ['date', ...c]), ...PERSON_CARDS.map((c) => ['person', ...c])];
     await batch([
-      ...(has
-        ? []
-        : rows.map(([kind, period, front, back, note], i) => [
-            'INSERT INTO fact_cards (kind, period_number, front, back, note, position) VALUES (?, ?, ?, ?, ?, ?)',
-            kind, period, front, back, note, i + 1,
-          ])),
+      [`DELETE FROM card_progress WHERE card_id IN (${FIRST_SET}) AND ${NOT_SEEDED}`],
+      [`DELETE FROM fact_cards WHERE id IN (${FIRST_SET}) AND ${NOT_SEEDED}`],
+      ...rows.map(([kind, period, front, back, note, source], i) => [
+        `INSERT INTO fact_cards (kind, period_number, front, back, note, source, position) SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${NOT_SEEDED}`,
+        kind, period, front, back, note, source, i + 1,
+      ]),
       ["INSERT INTO settings (key, value) VALUES ('cards_seeded', '1') ON CONFLICT(key) DO NOTHING"],
+      [`INSERT INTO settings (key, value) VALUES ('${SEED_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
     ]);
   })().catch((err) => {
     seeding = null;
@@ -255,7 +258,7 @@ export function ensureCards() {
   return seeding;
 }
 
-const cardOut = (c) => ({ id: c.id, kind: c.kind, front: c.front, back: c.back, note: c.note, period_number: c.period_number });
+const cardOut = (c) => ({ id: c.id, kind: c.kind, front: c.front, back: c.back, note: c.note, source: c.source || '', period_number: c.period_number });
 
 export async function cardsFor(userId) {
   await ensureCards();
@@ -304,10 +307,11 @@ export function cardFields(body) {
   const front = s(body?.front, 120);
   const back = s(body?.back, 300);
   const note = s(body?.note, 500);
+  const source = s(body?.source, 300);
   if (!front) fail(400, kind === 'date' ? 'Датаны жазыңыз.' : 'Тұлғаның атын жазыңыз.');
   if (!back) fail(400, kind === 'date' ? 'Оқиғаны жазыңыз.' : 'Тұлға кім екенін жазыңыз.');
   const period = body?.period_number === null || body?.period_number === '' ? null : int(body?.period_number, 1, 9, null);
-  return { kind, front, back, note, period_number: period, published: body?.published === false ? 0 : 1 };
+  return { kind, front, back, note, source, period_number: period, published: body?.published === false ? 0 : 1 };
 }
 
 // ─── Жетістіктер ──────────────────────────────────────────────────
@@ -322,7 +326,10 @@ async function userStats(userId) {
   );
   const reworks = (await get("SELECT COUNT(*) AS n FROM attempts WHERE user_id = ? AND kind = 'rework'", userId)).n;
   const quizzes = (await get('SELECT COUNT(DISTINCT test_id) AS n FROM quiz_runs WHERE user_id = ? AND finished_at IS NOT NULL', userId)).n;
-  const mock = await get('SELECT COUNT(*) AS n, MAX(CASE WHEN max_score > 0 THEN score * 1.0 / max_score END) AS best FROM mock_runs WHERE user_id = ?', userId);
+  const mock = await get(
+    'SELECT COUNT(*) AS n, COUNT(DISTINCT variant) AS variants, MAX(CASE WHEN max_score > 0 THEN score * 1.0 / max_score END) AS best FROM mock_runs WHERE user_id = ?',
+    userId,
+  );
   const cards = await get('SELECT COUNT(*) AS seen, SUM(CASE WHEN box >= ? THEN 1 ELSE 0 END) AS learned FROM card_progress WHERE user_id = ?', LEARNED_BOX, userId);
   // Days with any work: tests, quizzes, mock exams, cards (in Almaty days).
   const stamps = await all(
@@ -348,6 +355,7 @@ async function userStats(userId) {
     reworks,
     quizzes,
     mocks: mock.n,
+    mockVariants: mock.variants || 0,
     mockBest: mock.best ?? 0,
     cardsLearned: cards.learned || 0,
     cardsSeen: cards.seen || 0,
@@ -385,9 +393,10 @@ function badgeRules(stats) {
     ['rework_1', 'Қатесін түзеген', 'Қатемен жұмысты бір рет орында', 'repeat', stats.reworks, 1],
     ['quiz_1', 'Quiz жеңімпазы', 'Бір quiz-ді соңына дейін өт', 'quiz', stats.quizzes, 1],
     ['quiz_10', 'Quiz шебері', '10 quiz-ді соңына дейін өт', 'quiz', stats.quizzes, 10],
-    ['mock_1', 'ҰБТ-ға қадам', 'Бірінші ҰБТ сынағын тапсыр', 'exam', stats.mocks, 1],
-    ['mock_80', 'Жоғары балл', 'ҰБТ сынағынан 80% және одан жоғары жина', 'exam', Math.round(stats.mockBest * 100), 80],
-    ['mock_100', 'Толық балл', 'ҰБТ сынағынан ең жоғары балл жина', 'crown', Math.round(stats.mockBest * 100), 100],
+    ['mock_1', 'ҰБТ-ға қадам', 'Бірінші сынақ тестті тапсыр', 'exam', stats.mocks, 1],
+    ['mock_80', 'Жоғары балл', 'Сынақ тесттен 80% және одан жоғары жина', 'exam', Math.round(stats.mockBest * 100), 80],
+    ['mock_all', 'Он нұсқа', 'Сынақ тесттің 10 нұсқасының бәрін тапсыр', 'tests', stats.mockVariants, 10],
+    ['mock_100', 'Толық балл', 'Сынақ тесттен ең жоғары балл жина', 'crown', Math.round(stats.mockBest * 100), 100],
     ['cards_20', 'Даталар білгірі', '20 карточканы меңгер', 'cards', stats.cardsLearned, 20],
     ['cards_100', 'Есте сақтау шебері', '100 карточканы меңгер', 'cards', stats.cardsLearned, 100],
     ['streak_3', 'Табанды', '3 күн қатарынан оқы', 'flame', stats.streak, 3],
@@ -432,7 +441,7 @@ export async function badgesFor(userId) {
 export const practiceRouter = express.Router();
 
 practiceRouter.get('/mock', wrap(async (req, res) => res.json(await mockInfo(req.user.id))));
-practiceRouter.post('/mock/start', wrap(async (req, res) => res.json(await startMock(req.user.id))));
+practiceRouter.post('/mock/start', wrap(async (req, res) => res.json(await startMock(req.user.id, req.body))));
 practiceRouter.post('/mock/submit', wrap(async (req, res) => res.json(await submitMock(req.user.id, req.body))));
 practiceRouter.get('/mock/:id(\\d+)', wrap(async (req, res) => res.json(await mockRun(req.user.id, Number(req.params.id)))));
 
@@ -480,8 +489,8 @@ orgPracticeRouter.post(
     const c = cardFields(req.body);
     const pos = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM fact_cards')).p;
     const r = await run(
-      'INSERT INTO fact_cards (kind, front, back, note, period_number, published, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      c.kind, c.front, c.back, c.note, c.period_number, c.published, pos,
+      'INSERT INTO fact_cards (kind, front, back, note, source, period_number, published, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      c.kind, c.front, c.back, c.note, c.source, c.period_number, c.published, pos,
     );
     res.status(201).json({ card: cardOut(await get('SELECT * FROM fact_cards WHERE id = ?', Number(r.lastInsertRowid))) });
   }),
@@ -493,8 +502,8 @@ orgPracticeRouter.put(
     if (!(await get('SELECT id FROM fact_cards WHERE id = ?', id))) fail(404, 'Карточка табылмады.');
     const c = cardFields(req.body);
     await run(
-      "UPDATE fact_cards SET kind = ?, front = ?, back = ?, note = ?, period_number = ?, published = ?, updated_at = datetime('now') WHERE id = ?",
-      c.kind, c.front, c.back, c.note, c.period_number, c.published, id,
+      "UPDATE fact_cards SET kind = ?, front = ?, back = ?, note = ?, source = ?, period_number = ?, published = ?, updated_at = datetime('now') WHERE id = ?",
+      c.kind, c.front, c.back, c.note, c.source, c.period_number, c.published, id,
     );
     res.json({ card: cardOut(await get('SELECT * FROM fact_cards WHERE id = ?', id)) });
   }),
@@ -514,29 +523,43 @@ orgPracticeRouter.delete(
 orgPracticeRouter.get(
   '/mock',
   wrap(async (_req, res) => {
-    const snap = await published();
-    const { byPeriod } = poolOf(snap);
     const runs = await all(
-      `SELECT m.id, m.correct, m.total, m.score, m.max_score, m.duration_sec, m.created_at, u.display_name, u.email
+      `SELECT m.id, m.variant, m.correct, m.total, m.score, m.max_score, m.duration_sec, m.created_at, u.display_name, u.email
        FROM mock_runs m JOIN users u ON u.id = m.user_id ORDER BY m.id DESC LIMIT 200`,
     );
+    const stats = await all(
+      'SELECT variant, COUNT(*) AS n, AVG(CASE WHEN max_score > 0 THEN score * 100.0 / max_score END) AS avg FROM mock_runs WHERE variant IS NOT NULL GROUP BY variant',
+    );
+    const byVariant = new Map(stats.map((r) => [r.variant, r]));
     res.json({
       settings: await mockSettings(),
       defaults: MOCK_DEFAULTS,
-      periods: snap.periods
-        .slice()
-        .sort((a, b) => a.number - b.number)
-        .map((p) => ({ number: p.number, title: p.title, questions: byPeriod.get(p.id)?.length || 0 })),
+      periods: await periodList(),
+      variants: mockVariants().map((v) => ({
+        ...variantShape(v),
+        tries: byVariant.get(v.number)?.n || 0,
+        average_percent: byVariant.has(v.number) ? Math.round(byVariant.get(v.number).avg || 0) : null,
+      })),
       runs,
     });
+  }),
+);
+/** One variant with its correct answers, for the organizer to read through. */
+orgPracticeRouter.get(
+  '/mock/variants/:n(\\d+)',
+  wrap(async (req, res) => {
+    const v = variantOf(req.params.n);
+    if (!v) fail(404, 'Нұсқа табылмады.');
+    const r = gradeVariant(v, {}, await periodList());
+    res.json({ ...variantShape(v), items: r.items.map((it) => ({ ...it, earned: it.points, is_correct: true, answered: true })) });
   }),
 );
 orgPracticeRouter.put(
   '/mock',
   wrap(async (req, res) => {
-    const s = { question_count: int(req.body?.question_count, 5, 60, 20), time_min: int(req.body?.time_min, 5, 180, 40) };
+    const s = { time_min: int(req.body?.time_min, 10, 240, MOCK_DEFAULTS.time_min), variants: 1 };
     await run("INSERT INTO settings (key, value) VALUES ('mock', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify(s));
-    res.json({ settings: s });
+    res.json({ settings: { time_min: s.time_min } });
   }),
 );
 

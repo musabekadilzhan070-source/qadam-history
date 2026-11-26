@@ -6,10 +6,17 @@ import { reviewList } from './review.js';
 import { runQuiz } from './quiz.js';
 import { checkBadges } from '../badges.js';
 
-// «ҰБТ сынақ»: a mock exam in the format of the national exam. Questions come mixed from the
-// classic tests of every period, one point each, under one timer. The result shows the score,
-// the score per period, the weakest period to read again, and every question with its answer.
+// «Сынақ тесттер»: ten fixed variants of 50 questions in the manner of the ҰБТ. Level A asks for
+// a fact, level B for understanding, level C has several answers, pairs or an order (2 points).
+// The student picks a variant; the result shows the score per level and per period, the weakest
+// period to read again, and every question with its answer and the textbook page.
 
+const BASE = '/sinaq';
+const LEVEL_NOTE = {
+  A: 'Деректі білу: бір дұрыс жауап, 1 балл',
+  B: 'Түсіну және талдау: бір дұрыс жауап, 1 балл',
+  C: 'Бірнеше жауап, сәйкестендіру, реттілік: 2 балл',
+};
 const num = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10));
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
 
@@ -52,7 +59,7 @@ function resultHtml(r, { fresh = false, auto = false } = {}) {
           <div><b>${num(r.score)}</b><span>/ ${num(r.max_score)} балл</span></div>
         </div>
         <div>
-          <p class="eyebrow">ҰБТ сынақ${r.created_at ? ` · ${esc(formatDate(r.created_at))}` : ''}</p>
+          <p class="eyebrow">Сынақ тест${r.variant ? ` · ${r.variant}-нұсқа` : ''}${r.created_at ? ` · ${esc(formatDate(r.created_at))}` : ''}</p>
           <h1 id="result-title">${verdict(r.percent)}</h1>
           ${record ? `<p class="ubt-record">${icon('crown')} Жаңа рекорд! Бұрынғы ең жоғары балл: ${num(r.previous_best)}</p>` : ''}
           <ul class="result-counts">
@@ -62,19 +69,58 @@ function resultHtml(r, { fresh = false, auto = false } = {}) {
             ${r.duration_sec ? `<li>${formatDuration(r.duration_sec)} уақыт</li>` : ''}
           </ul>
           <div class="banner-actions">
-            <a class="btn" href="/ubt?start=1" data-link>Жаңа сынақ</a>
-            <a class="btn btn-ghost-light" href="/ubt" data-link>Барлық сынақтар</a>
+            ${r.variant ? `<a class="btn" href="${BASE}?start=${r.variant}" data-link>Осы нұсқаны қайта тапсыру</a>` : ''}
+            <a class="btn btn-ghost-light" href="${BASE}" data-link>Барлық нұсқалар</a>
           </div>
         </div>
         ${ornamentBand('band')}
       </section>
+      ${
+        r.by_level?.length
+          ? `<section class="panel ubt-card">
+              <div class="ubt-card-head"><h2>Деңгейлер бойынша</h2></div>
+              ${levelBars(r.by_level)}
+            </section>`
+          : ''
+      }
       <section class="panel ubt-card">
         <div class="ubt-card-head"><h2>Кезеңдер бойынша</h2>
           ${weak && pct(weak.correct, weak.total) < 100 ? `<p class="ubt-advice">${icon('info')}<span>Ең көп қате: <b>${esc(weak.title)}</b>. Осы кезеңнің тақырыптарын қайталаңыз.</span></p>` : ''}</div>
         ${periodBars(r.by_period)}
       </section>
-      ${reviewList(r.items)}
+      ${r.items.length ? reviewList(r.items) : '<p class="ubt-note">Бұл сынақ нұсқалар енгізілгенге дейін тапсырылған: тек балы сақталған.</p>'}
     </div>`;
+}
+
+/** Level bars: points earned of the points of each level. */
+function levelBars(list) {
+  return `
+    <ul class="ubt-periods ubt-levels">
+      ${list
+        .map((l) => {
+          const v = pct(l.score, l.max_score);
+          return `<li>
+            <span class="ubt-p-name"><i class="lv lv-${l.level}">${l.level}</i>${esc(l.title)}<small>${esc(LEVEL_NOTE[l.level] || '')}</small></span>
+            <span class="ubt-p-bar"><i style="--w:${v}%"></i></span>
+            <span class="ubt-p-num">${num(l.score)} / ${num(l.max_score)} балл</span>
+          </li>`;
+        })
+        .join('')}
+    </ul>`;
+}
+
+/** Levels over every run sat on a variant. */
+function totalsByLevel(runs) {
+  const sum = new Map();
+  for (const r of runs) {
+    for (const l of r.by_level || []) {
+      const s = sum.get(l.level) || { level: l.level, title: l.title, score: 0, max_score: 0 };
+      s.score += l.score;
+      s.max_score += l.max_score;
+      sum.set(l.level, s);
+    }
+  }
+  return [...sum.values()].sort((a, b) => a.level.localeCompare(b.level));
 }
 
 /** Score history as columns, oldest on the left. */
@@ -108,63 +154,75 @@ function totalsByPeriod(info) {
 }
 
 function introHtml(info) {
-  const { settings, runs } = info;
-  const best = runs.length ? runs.reduce((m, r) => (r.score > m.score ? r : m), runs[0]) : null;
+  const { settings, runs, variants } = info;
+  const best = runs.length ? runs.reduce((m, r) => (pct(r.score, r.max_score) > pct(m.score, m.max_score) ? r : m), runs[0]) : null;
   const last = runs[0];
   const avg = runs.length ? runs.reduce((s, r) => s + pct(r.score, r.max_score), 0) / runs.length : 0;
+  const shape = variants[0] || { questions: 50, max_score: 60, levels: { A: 25, B: 15, C: 10 } };
+  const done = variants.filter((v) => v.tries).length;
+  const levels = totalsByLevel(runs);
   return `
     ${pageHead({
       eyebrow: 'ҰБТ-ға дайындық',
-      title: 'ҰБТ сынақ',
-      text: 'Нағыз ҰБТ-дағыдай: барлық кезеңнен аралас сұрақтар, бір уақыт, әр дұрыс жауапқа бір балл. Соңында балың мен әлсіз тұсың көрсетіледі.',
-      extra: `<ul class="head-stats"><li><b>${settings.question_count}</b>сұрақ</li><li><b>${settings.time_min}</b>минут</li><li><b>${runs.length}</b>сынақ тапсырдыңыз</li></ul>`,
+      title: 'Сынақ тесттер',
+      text: `${variants.length} нұсқа, әрқайсысында ${shape.questions} сұрақ: А, В және С деңгейлері. Сұрақтар сайттағы оқулықтар бойынша құрылып, жауабымен бірге тексерілген. Нұсқаны таңдап, уақытпен тапсырыңыз.`,
+      extra: `<ul class="head-stats"><li><b>${variants.length}</b>нұсқа</li><li><b>${shape.questions}</b>сұрақ</li><li><b>${settings.time_min}</b>минут</li><li><b>${done}/${variants.length}</b>тапсырылды</li></ul>`,
     })}
-    <div class="ubt-layout">
-      <section class="panel ubt-start">
-        <h2>Сынақ ережесі</h2>
-        <ul class="ubt-rules">
-          <li>${icon('tests')}<span><b>${settings.question_count} сұрақ</b>Әр сұрақтың бір ғана дұрыс жауабы бар.</span></li>
-          <li>${icon('target')}<span><b>1 сұрақ = 1 балл</b>Ең жоғары балл — ${settings.question_count}.</span></li>
-          <li>${icon('clock')}<span><b>${settings.time_min} минут</b>Уақыт біткенде жауаптар өзі тексеріледі.</span></li>
-          <li>${icon('periods')}<span><b>Барлық кезең</b>Ежелгі заманнан бүгінге дейін, аралас.</span></li>
-        </ul>
-        ${
-          info.ready
-            ? `<button type="button" class="btn btn-lg ubt-go" data-start>${icon('exam')} Сынақты бастау</button>
-               <p class="ubt-note">Бастаған соң таймер іске қосылады. Жауаптарды соңында бірден тексеруге болады.</p>`
-            : '<p class="ubt-note">Сынаққа сұрақ әзірге жеткіліксіз. Тесттер қосылған соң ашылады.</p>'
-        }
-      </section>
-      ${
-        runs.length
-          ? `<section class="panel ubt-stats">
-              <h2>Менің нәтижем</h2>
-              <ul class="ubt-kpis">
-                <li><b>${num(best.score)}<small>/${num(best.max_score)}</small></b><span>ең жоғары</span></li>
-                <li><b>${num(last.score)}<small>/${num(last.max_score)}</small></b><span>соңғы</span></li>
-                <li><b>${Math.round(avg)}%</b><span>орташа</span></li>
-              </ul>
-              ${trend(runs)}
-              <h3>Кезеңдер бойынша (барлық сынақ)</h3>
-              ${periodBars(totalsByPeriod(info))}
-            </section>`
-          : `<section class="panel ubt-stats ubt-empty">
-              <span class="ubt-empty-mark">${icon('exam')}</span>
-              <h2>Алғашқы сынағыңызды тапсырыңыз</h2>
-              <p>Нәтижелер, балдың өсуі және әр кезеңдегі әлсіз тұстар осы жерде көрсетіледі.</p>
-            </section>`
-      }
-    </div>
+    <section class="panel ubt-start ubt-rules-panel">
+      <h2>Сынақ құрылымы</h2>
+      <ul class="ubt-levels-list">
+        ${['A', 'B', 'C']
+          .map(
+            (l) => `<li><i class="lv lv-${l}">${l}</i><span><b>${shape.levels[l] || 0} сұрақ</b>${esc(LEVEL_NOTE[l])}</span></li>`,
+          )
+          .join('')}
+        <li><i class="lv lv-t">${icon('clock')}</i><span><b>${settings.time_min} минут</b>Ең жоғары балл — ${shape.max_score}. Уақыт біткенде жауаптар өзі тексеріледі.</span></li>
+      </ul>
+      <p class="ubt-note">С деңгейінде бір қате жіберсеңіз де 1 балл аласыз (ҰБТ-дағыдай). Әр сұрақтың түсініктемесінде қай оқулықтың қай беті екені жазылған.</p>
+    </section>
+    <section class="section">
+      <div class="section-head"><div><p class="eyebrow">Нұсқалар</p><h2 class="section-title">Нұсқаны таңдаңыз</h2></div></div>
+      <ol class="ubt-variants">
+        ${variants
+          .map(
+            (v) => `<li class="${v.best ? 'is-done' : ''}">
+              <button type="button" data-start="${v.number}">
+                <span class="uv-num"><small>Нұсқа</small><b>${v.number}</b></span>
+                <span class="uv-body">
+                  <b>${v.questions} сұрақ · ${v.max_score} балл</b>
+                  <small>${v.best ? `Ең жоғары: ${num(v.best.score)} / ${num(v.best.max_score)} · ${v.tries} рет` : 'Әлі тапсырылмаған'}</small>
+                  ${v.best ? `<span class="uv-bar"><i style="--w:${v.best.percent}%"></i></span>` : ''}
+                </span>
+                <span class="uv-go">${v.best ? 'Қайта' : 'Бастау'} ${icon('arrow')}</span>
+              </button>
+            </li>`,
+          )
+          .join('')}
+      </ol>
+    </section>
     ${
       runs.length
-        ? `<section class="section">
+        ? `<section class="panel ubt-stats ubt-mine">
+            <h2>Менің нәтижем</h2>
+            <ul class="ubt-kpis">
+              <li><b>${num(best.score)}<small>/${num(best.max_score)}</small></b><span>ең жоғары</span></li>
+              <li><b>${num(last.score)}<small>/${num(last.max_score)}</small></b><span>соңғы</span></li>
+              <li><b>${Math.round(avg)}%</b><span>орташа</span></li>
+            </ul>
+            ${trend(runs)}
+            <div class="ubt-mine-grid">
+              ${levels.length ? `<div><h3>Деңгейлер бойынша (барлық сынақ)</h3>${levelBars(levels)}</div>` : ''}
+              <div><h3>Кезеңдер бойынша (барлық сынақ)</h3>${periodBars(totalsByPeriod(info))}</div>
+            </div>
+          </section>
+          <section class="section">
             <div class="section-head"><div><p class="eyebrow">Тарих</p><h2 class="section-title">Тапсырылған сынақтар</h2></div></div>
             <ol class="ubt-history">
               ${runs
                 .map(
-                  (r) => `<li><a href="/ubt/${r.id}" data-link>
+                  (r) => `<li><a href="${BASE}/${r.id}" data-link>
                     <span class="ubt-h-score"><b>${num(r.score)}</b>/${num(r.max_score)}</span>
-                    <span class="ubt-h-main"><b>${verdict(pct(r.score, r.max_score))}</b><small>${esc(formatDate(r.created_at))} · ${formatDuration(r.duration_sec)}</small></span>
+                    <span class="ubt-h-main"><b>${r.variant ? `${r.variant}-нұсқа · ` : ''}${verdict(pct(r.score, r.max_score))}</b><small>${esc(formatDate(r.created_at))} · ${formatDuration(r.duration_sec)}</small></span>
                     <span class="ubt-h-pct">${pct(r.score, r.max_score)}%</span>${icon('arrow')}</a></li>`,
                 )
                 .join('')}
@@ -179,32 +237,34 @@ export async function ubtView(el, _params, app, alive) {
   if (!alive()) return;
   let quiz = null;
 
-  function start() {
+  function start(variant) {
     window.scrollTo(0, 0);
     quiz = runQuiz(el, {
       app,
-      heading: 'ҰБТ сынақ',
-      crumbs: '<ol class="breadcrumb"><li><a href="/ubt" data-link>ҰБТ сынақ</a></li><li aria-current="page">Сынақ</li></ol>',
-      load: () => api.post('/api/practice/mock/start'),
+      heading: `Сынақ тест · ${variant}-нұсқа`,
+      crumbs: `<ol class="breadcrumb"><li><a href="${BASE}" data-link>Сынақ тесттер</a></li><li aria-current="page">${variant}-нұсқа</li></ol>`,
+      load: () => api.post('/api/practice/mock/start', { variant }),
       submit: (answers, paper) => api.post('/api/practice/mock/submit', { answers, token: paper.token }),
       onResult: (r, { auto }) => {
         if (!alive()) return;
-        history.replaceState(null, '', `/ubt/${r.id}`);
+        history.replaceState(null, '', `${BASE}/${r.id}`);
         el.innerHTML = resultHtml(r, { fresh: true, auto });
         checkBadges();
       },
     });
     quiz.start().catch((err) => {
-      el.innerHTML = `<div class="panel error-box"><p>${esc(err.message)}</p><a class="btn btn-dark btn-sm" href="/ubt" data-link>Артқа</a></div>`;
+      el.innerHTML = `<div class="panel error-box"><p>${esc(err.message)}</p><a class="btn btn-dark btn-sm" href="${BASE}" data-link>Артқа</a></div>`;
     });
   }
 
-  if (new URLSearchParams(location.search).get('start') === '1' && info.ready) {
-    history.replaceState(null, '', '/ubt');
-    start();
+  const asked = Number(new URLSearchParams(location.search).get('start'));
+  if (info.variants.some((v) => v.number === asked)) {
+    history.replaceState(null, '', BASE);
+    start(asked);
   } else {
+    if (location.pathname !== BASE) history.replaceState(null, '', BASE);
     el.innerHTML = introHtml(info);
-    el.querySelector('[data-start]')?.addEventListener('click', start);
+    el.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('click', () => start(Number(b.dataset.start))));
   }
   return () => quiz?.stop();
 }

@@ -4,13 +4,20 @@ import { icon } from '../art.js';
 import { pageHead } from '../components.js';
 import { checkBadges } from '../badges.js';
 
-// «Карточкалар»: dates and persons to learn by heart. A session shows the cards due for review
+// «Карточкалар»: dates and persons to learn by heart, in two sections (/cards/dates, /cards/persons).
+// Every card says which textbook and page it comes from. A session shows the cards due for review
 // first, then new ones; the student turns a card over and says whether they knew it. Known cards
 // come back after longer and longer breaks (Leitner boxes, kept on the server); a card they did
 // not know comes back again in the same session.
 
 const SESSION = 20;
 const KIND = { date: 'Дата', person: 'Тұлға' };
+const SLUG = { date: 'dates', person: 'persons' };
+const SECTION = {
+  date: { title: 'Даталар', icon: 'clock', text: 'Маңызды тарихи оқиғалардың жылдары' },
+  person: { title: 'Тұлғалар', icon: 'profile', text: 'Тарихи тұлғалар және олардың кім болғаны' },
+};
+const sourceHtml = (c, cls) => (c.source ? `<p class="${cls}">${icon('materials')}<span>${esc(c.source)}</span></p>` : '');
 const shuffle = (list) => {
   const a = [...list];
   for (let i = a.length - 1; i > 0; i -= 1) {
@@ -20,12 +27,12 @@ const shuffle = (list) => {
   return a;
 };
 
-export async function cardsView(el, _params, app, alive) {
+export async function cardsView(el, [section], app, alive) {
   const data = await api.get('/api/practice/cards');
   if (!alive()) return;
   const query = new URLSearchParams(location.search);
   const state = {
-    kind: ['date', 'person'].includes(query.get('kind')) ? query.get('kind') : '',
+    kind: section === 'persons' || (!section && query.get('kind') === 'person') ? 'person' : 'date',
     period: Number(query.get('period')) || 0,
     reverse: false,
   };
@@ -35,7 +42,7 @@ export async function cardsView(el, _params, app, alive) {
   let session = null;
   let keyHandler = null;
 
-  const inDeck = () => data.cards.filter((c) => (!state.kind || c.kind === state.kind) && (!state.period || c.period_number === state.period));
+  const inDeck = () => data.cards.filter((c) => c.kind === state.kind && (!state.period || c.period_number === state.period));
   const boxOf = (c) => progress[c.id]?.box || 0;
   const isDue = (c) => boxOf(c) > 0 && boxOf(c) < 6 && progress[c.id].due_at <= data.now;
   const counts = (list) => ({
@@ -48,14 +55,16 @@ export async function cardsView(el, _params, app, alive) {
 
   function remember() {
     const qs = new URLSearchParams();
-    if (state.kind) qs.set('kind', state.kind);
     if (state.period) qs.set('period', state.period);
-    history.replaceState(null, '', qs.toString() ? `/cards?${qs}` : '/cards');
+    const path = `/cards/${SLUG[state.kind]}`;
+    history.replaceState(null, '', qs.toString() ? `${path}?${qs}` : path);
   }
 
   const all = counts(data.cards);
+  const ofKind = (k) => counts(data.cards.filter((c) => c.kind === k));
 
   function drawHome() {
+    remember();
     session = null;
     const deck = inDeck();
     const c = counts(deck);
@@ -65,13 +74,22 @@ export async function cardsView(el, _params, app, alive) {
       ${pageHead({
         eyebrow: 'Есте сақта',
         title: 'Карточкалар',
-        text: 'Маңызды даталар мен тарихи тұлғалар. Карточканы аударып, білгеніңді белгіле: білетінің сирек, білмейтінің жиі қайталанады.',
+        text: 'Маңызды даталар мен тарихи тұлғалар оқулықтар бойынша. Карточканы аударып, білгеніңді белгіле: білетінің сирек, білмейтінің жиі қайталанады.',
         extra: `<ul class="head-stats"><li><b>${all.all}</b>карточка</li><li><b>${all.learned}</b>меңгерілді</li><li><b>${all.due}</b>қайталау керек</li></ul>`,
       })}
+      <nav class="cards-tabs" aria-label="Карточка бөлімдері">
+        ${['date', 'person']
+          .map((k) => {
+            const n = ofKind(k);
+            return `<button type="button" class="cards-tab" data-kind="${k}" aria-pressed="${state.kind === k}">
+              <span class="ct-icon">${icon(SECTION[k].icon)}</span>
+              <span class="ct-body"><b>${SECTION[k].title}</b><small>${SECTION[k].text}</small></span>
+              <span class="ct-num"><b>${n.all}</b><small>${n.learned} меңгерілді</small></span>
+            </button>`;
+          })
+          .join('')}
+      </nav>
       <div class="toolbar cards-toolbar">
-        <div class="seg" role="group" aria-label="Карточка түрі">
-          ${[['', 'Барлығы'], ['date', 'Даталар'], ['person', 'Тұлғалар']].map(([k, t]) => `<button type="button" data-kind="${k}" aria-pressed="${state.kind === k}">${t}</button>`).join('')}
-        </div>
         <div class="chips" role="group" aria-label="Кезең">
           <button type="button" class="chip" data-period="0" aria-pressed="${!state.period}">Барлық кезең</button>
           ${data.periods.map((p) => `<button type="button" class="chip" data-period="${p.number}" aria-pressed="${state.period === p.number}"><span class="chip-num">${String(p.number).padStart(2, '0')}</span>${esc(p.title)}</button>`).join('')}
@@ -90,7 +108,7 @@ export async function cardsView(el, _params, app, alive) {
             c.all
               ? `${ready ? `<button type="button" class="btn btn-lg" data-go="learn">${icon('cards')} Жаттауды бастау <small>${Math.min(ready, SESSION)}</small></button>` : '<p class="cards-done">Бүгінгі карточкалар қайталанды. Келесі қайталау уақыты келгенде осында шығады.</p>'}
                  <button type="button" class="btn btn-ghost" data-go="all">Барлығын аралас қайталау</button>
-                 <label class="cards-flip-opt"><input type="checkbox" data-reverse ${state.reverse ? 'checked' : ''} /> Алдымен ${state.kind === 'person' ? 'сипаттамасы' : state.kind === 'date' ? 'оқиғасы' : 'жауабы'} көрсетілсін</label>`
+                 <label class="cards-flip-opt"><input type="checkbox" data-reverse ${state.reverse ? 'checked' : ''} /> Алдымен ${state.kind === 'person' ? 'сипаттамасы' : 'оқиғасы'} көрсетілсін</label>`
               : '<p class="cards-done">Бұл сүзгі бойынша карточка жоқ.</p>'
           }
         </div>
@@ -98,14 +116,14 @@ export async function cardsView(el, _params, app, alive) {
       ${
         deck.length
           ? `<section class="section">
-              <div class="section-head"><div><p class="eyebrow">Тізім</p><h2 class="section-title">${state.kind === 'person' ? 'Тұлғалар' : state.kind === 'date' ? 'Даталар' : 'Барлық карточка'}</h2></div></div>
+              <div class="section-head"><div><p class="eyebrow">Тізім</p><h2 class="section-title">${SECTION[state.kind].title}</h2></div></div>
               <ul class="cards-list">
                 ${deck
                   .map(
                     (x) => `<li class="box-${Math.min(boxOf(x), 5)}">
                       <span class="cl-front">${esc(x.front)}</span>
-                      <span class="cl-back">${esc(x.back)}${x.note ? `<small>${esc(x.note)}</small>` : ''}</span>
-                      <span class="cl-meta">${KIND[x.kind]}${periodTitle.get(x.period_number) ? ` · ${esc(periodTitle.get(x.period_number))}` : ''}
+                      <span class="cl-back">${esc(x.back)}${x.note ? `<small>${esc(x.note)}</small>` : ''}${sourceHtml(x, 'cl-src')}</span>
+                      <span class="cl-meta">${periodTitle.get(x.period_number) ? esc(periodTitle.get(x.period_number)) : KIND[x.kind]}
                         <i class="cl-level" aria-label="${boxOf(x) >= LEARNED ? 'Меңгерілді' : boxOf(x) ? 'Оқылуда' : 'Жаңа'}">${[1, 2, 3, 4, 5].map((n) => `<b class="${boxOf(x) >= n ? 'on' : ''}"></b>`).join('')}</i></span>
                     </li>`,
                   )
@@ -117,14 +135,12 @@ export async function cardsView(el, _params, app, alive) {
     el.querySelectorAll('[data-kind]').forEach((b) =>
       b.addEventListener('click', () => {
         state.kind = b.dataset.kind;
-        remember();
         drawHome();
       }),
     );
     el.querySelectorAll('[data-period]').forEach((b) =>
       b.addEventListener('click', () => {
         state.period = Number(b.dataset.period);
-        remember();
         drawHome();
       }),
     );
@@ -171,6 +187,7 @@ export async function cardsView(el, _params, app, alive) {
               <p class="fc-tag">${esc(front)}</p>
               <p class="fc-text">${esc(back)}</p>
               ${c.note ? `<p class="fc-note">${esc(c.note)}</p>` : ''}
+              ${sourceHtml(c, 'fc-src')}
             </div>
           </div>
         </div>
