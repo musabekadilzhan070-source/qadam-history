@@ -182,6 +182,11 @@ test('cards: the textbook set is there with sources, Leitner boxes move, the org
   assert.equal(data.cards.length, DATE_CARDS.length + PERSON_CARDS.length);
   assert.ok(data.cards.some((c) => c.kind === 'date') && data.cards.some((c) => c.kind === 'person'));
   assert.ok(data.cards.every((c) => /^Қазақстан тарихы, \d+-сынып/.test(c.source)), 'every card names its book');
+  const eset = data.cards.find((c) => c.front === 'Есет Көтібарұлы');
+  assert.ok(!/Кіші жүздегі/.test(eset.back), 'Есет is not confused with Сырым Датұлы');
+  // Every correction leads to a card of the current set.
+  const { CARD_FIXES_V3 } = await import('../server/seed/card-fixes.js');
+  for (const f of CARD_FIXES_V3) assert.ok(data.cards.some((c) => c.kind === f[0] && c.front === f[4] && c.back === f[5] && c.note === f[6]), f[4]);
   const card = data.cards.find((c) => c.front === '1465–1466 жылдар');
   assert.equal(card.back, 'Қазақ хандығының құрылуы');
 

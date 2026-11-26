@@ -6,6 +6,7 @@ import { forStudent, grade } from './questions.js';
 import { makeToken, readToken } from './quiz.js';
 import { dayOf } from './almaty.js';
 import { DATE_CARDS, PERSON_CARDS } from './seed/cards.js';
+import { CARD_FIXES_V3 } from './seed/card-fixes.js';
 import { VARIANTS } from './seed/variants.js';
 import { rowsToQuestions } from './transfer.js';
 
@@ -239,7 +240,8 @@ const FIRST_SET = `SELECT id FROM fact_cards WHERE source = '' AND updated_at = 
 /** Adds the textbook set of cards once. */
 export function ensureCards() {
   seeding ||= (async () => {
-    if (await get(`SELECT 1 AS ok FROM settings WHERE key = '${SEED_KEY}'`)) return;
+    if (await get(`SELECT 1 AS ok FROM settings WHERE key = '${FIX_KEY}'`)) return;
+    if (await get(`SELECT 1 AS ok FROM settings WHERE key = '${SEED_KEY}'`)) return fixCards();
     const rows = [...DATE_CARDS.map((c) => ['date', ...c]), ...PERSON_CARDS.map((c) => ['person', ...c])];
     await batch([
       [`DELETE FROM card_progress WHERE card_id IN (${FIRST_SET}) AND ${NOT_SEEDED}`],
@@ -250,12 +252,29 @@ export function ensureCards() {
       ]),
       ["INSERT INTO settings (key, value) VALUES ('cards_seeded', '1') ON CONFLICT(key) DO NOTHING"],
       [`INSERT INTO settings (key, value) VALUES ('${SEED_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
+      // A new database gets the corrected set at once.
+      [`INSERT INTO settings (key, value) VALUES ('${FIX_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
     ]);
   })().catch((err) => {
     seeding = null;
     throw err;
   });
   return seeding;
+}
+
+// 'cards_fixed_v3': corrections to the textbook set. Only cards still as they were seeded change
+// (an organizer's edit stays); the students' progress on them is kept.
+const FIX_KEY = 'cards_fixed_v3';
+async function fixCards() {
+  await batch([
+    ...CARD_FIXES_V3.map(([kind, oldFront, oldBack, oldNote, front, back, note, source]) => [
+      `UPDATE fact_cards SET front = ?, back = ?, note = ?, source = ?
+       WHERE kind = ? AND front = ? AND back = ? AND note = ? AND updated_at = created_at
+         AND NOT EXISTS (SELECT 1 FROM settings WHERE key = '${FIX_KEY}')`,
+      front, back, note, source, kind, oldFront, oldBack, oldNote,
+    ]),
+    [`INSERT INTO settings (key, value) VALUES ('${FIX_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
+  ]);
 }
 
 const cardOut = (c) => ({ id: c.id, kind: c.kind, front: c.front, back: c.back, note: c.note, source: c.source || '', period_number: c.period_number });
