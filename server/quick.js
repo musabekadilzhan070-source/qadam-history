@@ -3,7 +3,8 @@ import { published } from './publish.js';
 
 // «Жылдам тест»: ten questions of a test shown one by one, as in a short video. A countdown runs,
 // then the answer and a line from the textbook appear; the student counts the answers they knew.
-// Only single-answer questions with a short answer and no picture are used: they read well aloud.
+// A test of ten questions or fewer is shown whole, every format; a longer one gives ten, short single
+// answers first, as they read best aloud.
 
 export const QUICK_SIZE = 10;
 const PLAN = { A: 3, B: 4, C: 3 };
@@ -22,6 +23,8 @@ export function quickLevel(q, answer) {
 /** The explanation without its book reference, cut to its first sentence or two. */
 export function quickNote(explanation, answer, question = '') {
   let s = String(explanation || '').replace(/\s*Қазақстан тарихы,[^]*$/u, '').replace(/\s*Оқулықтағы тест:[^]*$/u, '').trim();
+  // «Мәліметтер 11-беттен алынды» and the like point at a page, not at the history.
+  s = s.replace(/[^.!?]*\d+[-–]бет[^.!?]*[.!?]?/gu, '').trim();
   if (!s) return '';
   const sentences = s.match(/[^.!?]+[.!?]?/gu) || [s];
   let note = sentences[0].trim();
@@ -39,21 +42,52 @@ export function quickNote(explanation, answer, question = '') {
 
 const bookOf = (explanation) => (String(explanation || '').match(/Қазақстан тарихы,[^]*$/u)?.[0] || '').replace(/\.$/, '');
 
-function candidates(test) {
+/** Every question of the test as a card: the answer is one line, or a list (several answers, pairs, an order). */
+function items(test) {
   const out = [];
-  const walk = (qs) => {
-    for (const q of qs || []) {
-      if (q.type === 'context') walk(q.children);
-      if (q.type !== 'single' || q.image_id) continue;
-      const right = (q.options || []).filter((o) => o.is_correct);
-      if (right.length !== 1 || right[0].image_id) continue;
-      const answer = String(right[0].text || '').trim();
-      if (!answer || answer.length > MAX_ANSWER || /барлығы|жоғарыдағы|дұрыс жауап жоқ/i.test(answer)) continue;
-      out.push({ id: q.id, text: q.text, answer, level: quickLevel(q, answer), note: quickNote(q.explanation, answer, q.text), source: bookOf(q.explanation) });
-    }
+  for (const q of test.questions || []) {
+    if (q.type === 'context') for (const c of q.children || []) out.push(item(c, q.text));
+    else out.push(item(q, ''));
+  }
+  return out.filter(Boolean);
+}
+
+function item(q, context) {
+  let answer = '';
+  let lines = null;
+  let answerImage = null;
+  if (q.type === 'single' || q.type === 'image') {
+    const right = (q.options || []).find((o) => o.is_correct);
+    if (!right) return null;
+    answer = String(right.text || '').trim();
+    answerImage = right.image_id || null;
+  } else if (q.type === 'multiple') {
+    lines = (q.options || []).filter((o) => o.is_correct).map((o) => String(o.text || '').trim());
+  } else if (q.type === 'matching') {
+    lines = (q.data?.pairs || []).map((p) => `${p.left} — ${p.right}`);
+  } else if (q.type === 'ordering') {
+    lines = (q.data?.items || []).map((x) => (x.date ? `${x.date}: ${x.text}` : x.text));
+  } else if (q.type === 'open') {
+    answer = String(q.data?.answers?.[0] || '').trim();
+  }
+  if (!answer && !answerImage && !lines?.length) return null;
+  const said = answer || (lines || []).join(' ');
+  const level = q.type === 'matching' || q.type === 'ordering' || q.type === 'multiple' ? (WHY.test(q.text) ? 'C' : 'B') : quickLevel(q, answer);
+  // A short single answer without pictures reads best as a «video» card.
+  const plain = q.type === 'single' && !q.image_id && !answerImage && answer.length <= MAX_ANSWER && !/барлығы|жоғарыдағы|дұрыс жауап жоқ/i.test(answer);
+  return {
+    id: q.id,
+    text: q.text,
+    context: context || '',
+    image_id: q.image_id || null,
+    answer,
+    lines,
+    answer_image_id: answerImage,
+    level,
+    plain,
+    note: quickNote(q.explanation, said, q.text),
+    source: bookOf(q.explanation),
   };
-  walk(test.questions);
-  return out;
 }
 
 const shuffle = (a) => {
@@ -64,10 +98,18 @@ const shuffle = (a) => {
   return a;
 };
 
-/** Ten questions, A then B then C; a level short of questions is filled from the others. */
+const ORDER = { A: 0, B: 1, C: 2 };
+const byLevel = (list) => list.slice().sort((a, b) => ORDER[a.level] - ORDER[b.level]);
+
+/**
+ * A test of ten questions or fewer is shown whole. A longer one gives ten: short single answers first
+ * (3 A, 4 B, 3 C, a short level filled from the others), then other formats if those run out.
+ */
 export function pickQuick(pool, size = QUICK_SIZE) {
+  if (pool.length <= size) return byLevel(pool);
+  const plain = pool.filter((q) => q.plain !== false);
   const by = { A: [], B: [], C: [] };
-  for (const q of shuffle([...pool])) by[q.level].push(q);
+  for (const q of shuffle([...plain])) by[q.level].push(q);
   const picked = { A: [], B: [], C: [] };
   for (const lv of ['A', 'B', 'C']) picked[lv] = by[lv].splice(0, PLAN[lv]);
   let missing = size - picked.A.length - picked.B.length - picked.C.length;
@@ -77,7 +119,9 @@ export function pickQuick(pool, size = QUICK_SIZE) {
       missing--;
     }
   }
-  return [...picked.A, ...picked.B, ...picked.C];
+  const chosen = [...picked.A, ...picked.B, ...picked.C];
+  if (missing > 0) chosen.push(...shuffle(pool.filter((q) => q.plain === false)).slice(0, missing));
+  return byLevel(chosen);
 }
 
 export async function quickTest(testId) {
@@ -99,13 +143,15 @@ export async function quickTest(testId) {
       for (const x of snap.tests.filter((xx) => xx.topic_id === t.id)) order.push({ x, t });
     }
   }
+  const all = items(test);
   const at = order.findIndex((o) => o.x.id === test.id);
-  const next = order.slice(at + 1).find((o) => candidates(o.x).length >= 5);
+  const next = order.slice(at + 1).find((o) => items(o.x).length > 0);
   return {
     test: { id: test.id, title: test.title },
     topic: { title: topic.title, number: periodTests.indexOf(test.id) + 1 },
     period: { title: period.title, number: period.number },
-    questions: pickQuick(candidates(test)).map(({ id, ...q }) => q),
+    questions: pickQuick(all).map(({ id, plain, ...q }) => q),
+    whole: all.length <= QUICK_SIZE,
     next: next ? { id: next.x.id, title: next.t.title } : null,
   };
 }

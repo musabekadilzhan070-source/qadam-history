@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { esc } from '../util.js';
+import { fileUrl } from '../site.js';
 
 // «Жылдам тест» (/quick/:id): ten questions of a test, one at a time, as in a short video.
 // A 3-2-1 countdown runs, «Ойлан…» shows, then the answer and a line from the textbook appear.
@@ -8,11 +9,22 @@ import { esc } from '../util.js';
 const COUNT_SEC = 3;
 const THINK_MS = 1800;
 const LEVEL = { A: 'А деңгей', B: 'В деңгей', C: 'С деңгей' };
-const BANDS = [
-  [9, 10, 'Керемет! Тақырыпты меңгердің'],
-  [6, 8, 'Жақсы! Тағы бір қайтала'],
-  [0, 5, 'Оқулықты қайта оқып шық'],
-];
+// The bands follow the number of questions: 90% and up, 60% and up, the rest (9–10, 6–8, 0–5 of ten).
+export function bands(n) {
+  const top = Math.ceil(n * 0.9);
+  const mid = Math.min(Math.ceil(n * 0.6), top - 1);
+  return [
+    [top, n, 'Керемет! Тақырыпты меңгердің'],
+    [Math.max(mid, 1), top - 1, 'Жақсы! Тағы бір қайтала'],
+    [0, Math.max(mid, 1) - 1, 'Оқулықты қайта оқып шық'],
+  ].filter(([lo, hi]) => lo <= hi);
+}
+const range = (lo, hi) => (lo === hi ? String(lo) : `${lo}–${hi}`);
+const answerHtml = (q) => `
+  ${q.answer_image_id ? `<img class="qk-answer-img" src="${fileUrl(q.answer_image_id)}" alt="" />` : ''}
+  ${q.answer ? `<strong>${esc(q.answer)}</strong>` : ''}
+  ${q.lines?.length ? `<ul>${q.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}`;
+const answerText = (q) => q.answer || (q.lines || []).join('; ');
 
 export async function quickView(el, [id], app, alive) {
   const data = await api.get(`/api/quick/${encodeURIComponent(id)}`);
@@ -69,7 +81,9 @@ export async function quickView(el, [id], app, alive) {
       `
       <header class="qk-head">${pill}${dots(i)}<p class="qk-level lv-${q.level}">${LEVEL[q.level]} · ${i + 1}/${qs.length}-сұрақ</p></header>
       <div class="qk-body">
+        ${q.context ? `<p class="qk-context">${esc(q.context)}</p>` : ''}
         <h2 class="qk-q">${esc(q.text)}</h2>
+        ${q.image_id ? `<img class="qk-img" src="${fileUrl(q.image_id)}" alt="Сұрақтың суреті" />` : ''}
         <div class="qk-slot">
           <div class="qk-ring" style="--sec:${COUNT_SEC}s"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" /></svg><b>${COUNT_SEC}</b></div>
         </div>
@@ -91,7 +105,7 @@ export async function quickView(el, [id], app, alive) {
     stop();
     const q = qs[i];
     el.querySelector('.qk-slot').innerHTML = `
-      <div class="qk-answer"><small>Жауабы</small><strong>${esc(q.answer)}</strong></div>
+      <div class="qk-answer${q.lines?.length ? ' qk-answer-list' : ''}"><small>Жауабы</small>${answerHtml(q)}</div>
       ${q.note ? `<p class="qk-note">${esc(q.note)}</p>` : ''}`;
     el.querySelector('.qk-foot').innerHTML = `
       <p class="qk-ask">Дұрыс айттың ба?</p>
@@ -111,16 +125,16 @@ export async function quickView(el, [id], app, alive) {
         <h2 class="qk-result">Нәтижең қандай?</h2>
         <p class="qk-score"><b>${score}</b> / ${qs.length}</p>
         <ul class="qk-bands">
-          ${BANDS.map(([lo, hi, text]) => `<li class="${score >= lo && score <= hi ? 'on' : ''}"><b>${lo}–${hi}</b>${text}</li>`).join('')}
+          ${bands(qs.length).map(([lo, hi, text]) => `<li class="${score >= lo && score <= hi ? 'on' : ''}"><b>${range(lo, hi)}</b>${text}</li>`).join('')}
         </ul>
         ${
           missed.length
             ? `<details class="qk-missed"><summary>Білмеген сұрақтарың (${missed.length})</summary>
-                <ol>${missed.map((q) => `<li><span>${esc(q.text)}</span><b>${esc(q.answer)}</b></li>`).join('')}</ol></details>`
+                <ol>${missed.map((q) => `<li><span>${esc(q.text)}</span><b>${esc(answerText(q))}</b></li>`).join('')}</ol></details>`
             : ''
         }
         <div class="qk-actions">
-          <button type="button" class="btn" data-act="again">Жаңа 10 сұрақ</button>
+          <button type="button" class="btn" data-act="again">${data.whole ? 'Қайта бастау' : 'Жаңа 10 сұрақ'}</button>
           <a class="btn btn-ghost-light" href="/tests/${data.test.id}" data-link>Толық тестті тапсыру</a>
         </div>
         ${data.next ? `<p class="qk-next">Келесі тақырып:<br /><a href="/quick/${data.next.id}" data-link data-reload>«${esc(data.next.title)}»</a></p>` : ''}

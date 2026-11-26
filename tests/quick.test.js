@@ -34,6 +34,7 @@ test('levels, notes and the 3-4-3 pick', () => {
   const pool = [...Array(5)].map((_, i) => ({ level: 'A', i })).concat([...Array(5)].map((_, i) => ({ level: 'B', i })), [{ level: 'C', i: 0 }]);
   const pick = pickQuick(pool);
   assert.equal(pick.length, 10);
+  assert.equal(pickQuick(pool.slice(0, 6)).length, 6, 'a test of ten questions or fewer is shown whole');
   assert.equal(pick.map((q) => q.level).join(''), 'AAAABBBBBC', 'A first, then B, then C; a short level is filled from the others');
 });
 
