@@ -26,7 +26,7 @@ import { activityRouter, reportRouter, purgeOldActivity } from './activity.js';
 import { publicLinksRouter } from './links.js';
 import { seedIfEmpty } from './seed.js';
 import { linkExistingBooksOnce } from './shelves.js';
-import { runImportsOnce } from './imports.js';
+import { runImportsOnce, importsEnabled } from './imports.js';
 import { quizRouter, userQuizResults } from './quizgame.js';
 import { practiceRouter } from './practice.js';
 
@@ -34,14 +34,41 @@ import { practiceRouter } from './practice.js';
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // Schema + seed run once per process (once per cold start on Vercel); a failure is retried on the next request.
+// They are about sixty database round trips, so on Vercel a deploy runs them once: the first cold start
+// stamps the database with the deploy's id and later cold starts of the same deploy only check that stamp.
 let ready = null;
+const bootStamp = () => {
+  const deploy = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || '';
+  return deploy ? `${deploy}:${importsEnabled() ? 'i' : '-'}` : '';
+};
+
+async function alreadyBooted(stamp) {
+  if (!stamp) return false;
+  try {
+    return (await get("SELECT value FROM settings WHERE key = 'boot'"))?.value === stamp;
+  } catch {
+    return false; // a new database without the settings table
+  }
+}
+
 export function whenReady() {
   ready ||= (async () => {
-    await migrate();
-    await seedIfEmpty();
-    await ensureFirstPublication();
-    await linkExistingBooksOnce();
-    await runImportsOnce();
+    const started = Date.now();
+    const stamp = bootStamp();
+    if (await alreadyBooted(stamp)) {
+      console.log(`[boot] ready in ${Date.now() - started} ms (already set up)`);
+    } else {
+      await migrate();
+      await seedIfEmpty();
+      await ensureFirstPublication();
+      await linkExistingBooksOnce();
+      const importsDone = await runImportsOnce();
+      // A pack that stopped half-way is retried on a later cold start, so the stamp waits for it.
+      if (stamp && importsDone) {
+        await run("INSERT INTO settings (key, value) VALUES ('boot', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stamp).catch(() => {});
+      }
+      console.log(`[boot] ready in ${Date.now() - started} ms (full set-up)`);
+    }
     purgeExpiredSessions().catch(() => {});
     purgeOldActivity().catch(() => {});
   })().catch((err) => {

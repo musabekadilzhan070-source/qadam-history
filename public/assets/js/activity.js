@@ -30,7 +30,7 @@ async function beat() {
   const continuous = lastBeat > 0 && now - lastBeat < BEAT_MS * 1.8;
   lastBeat = now;
   try {
-    await api.post('/api/activity', { ...context, continuous });
+    await api.post('/api/activity', { ...context, continuous }, { keepCache: true });
   } catch {
     /* offline or signed out: the next beat tries again */
   }
