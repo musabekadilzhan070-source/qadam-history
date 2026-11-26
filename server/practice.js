@@ -6,7 +6,7 @@ import { forStudent, grade } from './questions.js';
 import { makeToken, readToken } from './quiz.js';
 import { dayOf } from './almaty.js';
 import { DATE_CARDS, PERSON_CARDS } from './seed/cards.js';
-import { CARD_FIXES_V3, CARD_FIXES_V4 } from './seed/card-fixes.js';
+import { CARD_FIXES_V3, CARD_FIXES_V4, CARD_FIXES_V5 } from './seed/card-fixes.js';
 import { VARIANTS } from './seed/variants.js';
 import { rowsToQuestions } from './transfer.js';
 
@@ -263,11 +263,13 @@ export function ensureCards() {
 }
 
 // Corrections to the textbook set, applied in order: 'cards_fixed_v3' (Есет Көтібарұлы and others),
-// 'cards_fixed_v4' (a short note of textbook facts on every card). Only cards still as they were
+// 'cards_fixed_v4' (a short note of textbook facts on every card), 'cards_fixed_v5' (every card checked
+// against the textbook question banks). Only cards still as they were
 // seeded change (an organizer's edit stays); the students' progress on them is kept.
 const FIXES = [
   ['cards_fixed_v3', CARD_FIXES_V3],
   ['cards_fixed_v4', CARD_FIXES_V4],
+  ['cards_fixed_v5', CARD_FIXES_V5],
 ];
 const FIX_KEY = FIXES[FIXES.length - 1][0];
 async function fixCards() {
