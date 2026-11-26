@@ -6,7 +6,7 @@ import { forStudent, grade } from './questions.js';
 import { makeToken, readToken } from './quiz.js';
 import { dayOf } from './almaty.js';
 import { DATE_CARDS, PERSON_CARDS } from './seed/cards.js';
-import { CARD_FIXES_V3 } from './seed/card-fixes.js';
+import { CARD_FIXES_V3, CARD_FIXES_V4 } from './seed/card-fixes.js';
 import { VARIANTS } from './seed/variants.js';
 import { rowsToQuestions } from './transfer.js';
 
@@ -253,7 +253,7 @@ export function ensureCards() {
       ["INSERT INTO settings (key, value) VALUES ('cards_seeded', '1') ON CONFLICT(key) DO NOTHING"],
       [`INSERT INTO settings (key, value) VALUES ('${SEED_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
       // A new database gets the corrected set at once.
-      [`INSERT INTO settings (key, value) VALUES ('${FIX_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
+      ...FIXES.map(([key]) => [`INSERT INTO settings (key, value) VALUES ('${key}', '1') ON CONFLICT(key) DO NOTHING`]),
     ]);
   })().catch((err) => {
     seeding = null;
@@ -262,19 +262,27 @@ export function ensureCards() {
   return seeding;
 }
 
-// 'cards_fixed_v3': corrections to the textbook set. Only cards still as they were seeded change
-// (an organizer's edit stays); the students' progress on them is kept.
-const FIX_KEY = 'cards_fixed_v3';
+// Corrections to the textbook set, applied in order: 'cards_fixed_v3' (Есет Көтібарұлы and others),
+// 'cards_fixed_v4' (a short note of textbook facts on every card). Only cards still as they were
+// seeded change (an organizer's edit stays); the students' progress on them is kept.
+const FIXES = [
+  ['cards_fixed_v3', CARD_FIXES_V3],
+  ['cards_fixed_v4', CARD_FIXES_V4],
+];
+const FIX_KEY = FIXES[FIXES.length - 1][0];
 async function fixCards() {
-  await batch([
-    ...CARD_FIXES_V3.map(([kind, oldFront, oldBack, oldNote, front, back, note, source]) => [
-      `UPDATE fact_cards SET front = ?, back = ?, note = ?, source = ?
-       WHERE kind = ? AND front = ? AND back = ? AND note = ? AND updated_at = created_at
-         AND NOT EXISTS (SELECT 1 FROM settings WHERE key = '${FIX_KEY}')`,
-      front, back, note, source, kind, oldFront, oldBack, oldNote,
-    ]),
-    [`INSERT INTO settings (key, value) VALUES ('${FIX_KEY}', '1') ON CONFLICT(key) DO NOTHING`],
-  ]);
+  for (const [key, fixes] of FIXES) {
+    if (await get('SELECT 1 AS ok FROM settings WHERE key = ?', key)) continue;
+    await batch([
+      ...fixes.map(([kind, oldFront, oldBack, oldNote, front, back, note, source]) => [
+        `UPDATE fact_cards SET front = ?, back = ?, note = ?, source = ?
+         WHERE kind = ? AND front = ? AND back = ? AND note = ? AND updated_at = created_at
+           AND NOT EXISTS (SELECT 1 FROM settings WHERE key = '${key}')`,
+        front, back, note, source, kind, oldFront, oldBack, oldNote,
+      ]),
+      [`INSERT INTO settings (key, value) VALUES ('${key}', '1') ON CONFLICT(key) DO NOTHING`],
+    ]);
+  }
 }
 
 const cardOut = (c) => ({ id: c.id, kind: c.kind, front: c.front, back: c.back, note: c.note, source: c.source || '', period_number: c.period_number });
