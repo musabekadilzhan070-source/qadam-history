@@ -8506,3 +8506,33 @@ html.reader-full-open body {
     min-height: 0;
   }
 }
+.qk-context {
+  margin: 0 0 -14px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  text-align: center;
+}
+.qk-img,
+.qk-answer-img {
+  display: block;
+  max-width: 100%;
+  max-height: 200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  object-fit: contain;
+}
+.qk-answer ul {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.qk-answer-list {
+  text-align: left;
+}
+.qk-answer-list small {
+  text-align: center;
+}
